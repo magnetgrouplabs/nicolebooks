@@ -73,7 +73,7 @@ Turn a folder of mixed bill documents into correctly categorized, non-duplicate 
 | OpenAI-compatible AI client with dynamic model listing and user selection | Explicit user requirement; keeps provider flexible (OpenAI, OpenRouter) and future-proof | Pending |
 | QuickBooks integration built and tested against sandbox first, with a hard pause for live credentials | Anthony lacks QuickBooks access now; sandbox lets everything else proceed and de-risks the live wire-up | Pending |
 | Defer source-file attachment to QuickBooks entries | User did not select it for v1; reduces initial API surface | Pending |
-| Cross-platform desktop framework chosen by research, prioritizing low deployment headache | End user OS unconfirmed; both platforms must ship cleanly | Pending |
+| Electron chosen over Tauri/Rust for the desktop framework | Node backend ecosystem covers every dependency (intuit-oauth, OpenAI SDK, PDF, sharp+HEIC, better-sqlite3, safeStorage); builder is JS/TS not Rust; safeStorage plus electron-builder plus electron-updater give the lowest deployment headache. User confirmed 2026-07-22 after reviewing the research reasoning. | Confirmed |
 
 ## Evolution
 
