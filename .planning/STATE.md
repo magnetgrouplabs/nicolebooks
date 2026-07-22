@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-07-22T21:12:02.971Z"
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-07-22T21:31:40.236Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-07-22
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [████████░░] 75%
 | Phase 01 P04 | 4min | 2 tasks | 7 files |
 | Phase 01 P05 | 3min | 2 tasks | 6 files |
 | Phase 01 P06 | 6min | 2 tasks | 9 files |
+| Phase 01 P07 | 14min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Foundation: OS light/dark mirror awaits the async window.api.theme.get() before the first React render then subscribes to onChange; with the window hidden until ready-to-show this yields no theme flash (RESEARCH Pitfall 4)
 - [Phase ?]: Foundation: HealthIndicator is the permanent SC2+SC4 proof (D-11); on mount it stores then reads a canary through window.api.secrets and renders Secret store: OK only on an exact round-trip match, never rendering or logging the secret (T-01-05)
 - [Phase ?]: Foundation: all renderer components use only semantic brand-token classes (text-primary, hover primary tint, focus ring token, success/destructive) with structural radius 0 for header/sidebar; zero hardcoded hex
+- [Phase ?]: Foundation: fixed a blocking preload-bundling bug (electron resolved to node_modules/electron/index.js requiring child_process) by externalizing electron in the preload build, so window.api now loads in the packaged loadFile app; every SC2/SC3/SC4 e2e proof and the shipped product depend on it
+- [Phase ?]: Foundation: Wave 0 e2e surface complete (secret-roundtrip, persistence, ipc-boundary, theme via Playwright _electron with per-test --user-data-dir isolation); ran green on Windows locally, macos-latest CI leg authored but deferred to CI and the 01-08 human checkpoint
+- [Phase ?]: Foundation: cross-OS CI matrix (windows-latest plus macos-latest, fail-fast false) with a distinct electron-rebuild step and no embedded token/secret; PLAT-01 automatable half done, real-machine half is 01-08
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-22T21:10:58.641Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-07-22T21:31:25.976Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None

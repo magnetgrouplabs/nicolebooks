@@ -61,7 +61,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-07-PLAN.md - End-to-end validation suite and cross-OS CI
+- [x] 01-07-PLAN.md - End-to-end validation suite and cross-OS CI
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 6/8 | In Progress|  |
+| 1. Foundation | 7/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 0/TBD | Not started | - |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
