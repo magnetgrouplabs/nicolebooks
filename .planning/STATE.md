@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-07-22T19:55:31.305Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-07-22T20:13:33.135Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-07-22
 
-Progress: [█░░░░░░░░░] 13%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [█░░░░░░░░░] 13%
 
 *Updated after each plan completion*
 | Phase 1 P1 | 14min | 3 tasks | 15 files |
+| Phase 01 P02 | 9min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - Foundation: Electron two-process shell chosen by research (settled, not open), with all IO, secrets, and network confined to the main process behind a typed IPC boundary.
 - [Phase ?]: Foundation: kept both locked pins (vite 8.1.5 and electron-vite 5.0.0) via .npmrc legacy-peer-deps; three-artifact build proven functional under vite 8
 - [Phase ?]: Foundation: better-sqlite3 13.0.1 rebuilt against Electron 43 ABI on Windows via prebuilt binary (no source compile, no MSVC/Python); Mac rebuild deferred to 01-07 cross-OS gate
+- [Phase ?]: Foundation: typed IPC boundary defined once in src/shared/ipc-contract.ts (seven channel constants) with Zod payload schemas; preload exposes only named window.api methods, never raw ipcRenderer (SC4, threats T-01-02/T-01-03)
+- [Phase ?]: Foundation: fixed pre-existing TS 7 baseUrl typecheck breakage (migrated tsconfig path maps to relative); node TS project now emits declarations only so the renderer can consume the preload type across the process split
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-22T19:55:31.295Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-07-22T20:13:33.125Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
