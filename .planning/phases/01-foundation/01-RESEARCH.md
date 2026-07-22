@@ -610,14 +610,16 @@ export function registerSettingsIpc() {
 | A6 | Synchronous safeStorage API is acceptable (vs the newer async variant) for the Phase 1 canary | Pattern 3 | Low. Payload is a tiny canary; sync is simplest. Later high-volume secret writes could adopt the async API |
 | A7 | Python 3.14 on this Windows machine may be too new for node-gyp source compilation | Pitfall 1 / Environment | Medium. Only bites if a prebuild is unavailable; mitigation is to install Python 3.11/3.12 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does a better-sqlite3 13.0.1 prebuilt binary exist for Electron 43's ABI on macOS arm64 and Windows x64?**
+   - RESOLVED: Plan 01-01 Task 2 runs `npx electron-rebuild -f -w better-sqlite3` as an explicit prebuild-or-source-compile branch (not a surprise), and the 01-07 CI matrix plus the 01-08 real-machine checkpoint re-verify the rebuild on both Windows and macOS. No longer open.
    - What we know: `@electron/rebuild` prefers prebuilds and falls back to source compile; better-sqlite3 publishes prebuilds on GitHub releases.
    - What's unclear: exact ABI coverage for Electron 43 at build time on both targets.
    - Recommendation: In the first execution wave, run `npx electron-rebuild -f -w better-sqlite3` on both OSes and treat a source-compile fallback (needing the C++ toolchain) as an expected branch, not a surprise.
 
 2. **Where exactly to vendor `tokens.json`: `design/` vs `src/renderer/brand/`?**
+   - RESOLVED: Settled to `src/renderer/brand/tokens.json` by the theme plan (01-03 Task 1), which vendors the canonical tokens there byte-for-byte and hand-authors globals.css from those values (no token-to-CSS codegen in Phase 1). No longer open.
    - What we know: D-02 allows either; the renderer consumes it at build time to author `globals.css`.
    - What's unclear: whether the planner wants a codegen step (tokens -> CSS) or a one-time hand-authored `globals.css` cross-checked against tokens.
    - Recommendation: For Phase 1, hand-author `globals.css` from the token values (the UI-SPEC already enumerates every value) and keep `tokens.json` vendored as the audit trail. Defer any token-to-CSS codegen unless later phases demand it.
