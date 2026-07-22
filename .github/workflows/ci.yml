@@ -1,0 +1,63 @@
+name: CI
+
+# Cross-OS gate for PLAT-01. The load-bearing check is that a native module (better-sqlite3)
+# rebuilds against the Electron 43 ABI AND both test suites pass on a Windows and a macOS
+# runner. Everything here is CI-automatable: the native rebuild, the SQLite persistence
+# relaunch, the keychain round trip (Windows DPAPI and the macOS runner Keychain both provide
+# a backend), the renderer isolation boundary, and the OS theme mirror. The real-machine half
+# of the gate (a locked or absent login keychain, visual brand fidelity) is the 01-08 checkpoint.
+#
+# No repository token, signing secret, or credential is referenced anywhere in this workflow.
+# Packaging, code signing, notarization, and update tokens all arrive in Phase 8, not here.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# Least privilege: the job only needs to read the checked-out source.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Do not cancel the macOS leg when Windows fails (or vice versa): a cross-OS gate
+      # needs the signal from BOTH runners on every run.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # electron-vite 5 requires Node 20.19+ or 22.12+ (RESEARCH Environment Availability).
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install dependencies
+        # npm ci runs the postinstall electron-rebuild for a clean, reproducible install.
+        run: npm ci
+
+      - name: Rebuild native module against the Electron ABI
+        # Explicit and distinct so an ABI or toolchain failure surfaces as its own visible CI
+        # failure on each OS (PLAT-01, threat T-01-08), not buried inside npm ci.
+        run: npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build (main, preload, renderer)
+        run: npm run build
+
+      - name: Unit tests (Vitest)
+        run: npx vitest run
+
+      - name: End-to-end tests (Playwright _electron)
+        # _electron launches the app's own bundled Electron/Chromium, so no Playwright
+        # managed-browser download is required. Windows and macOS runners both provide a
+        # display server, so no virtual framebuffer is needed.
+        run: npx playwright test
