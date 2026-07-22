@@ -128,17 +128,64 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features drawn from
 
 ## Traceability
 
-Populated during roadmap creation. Each v1 requirement maps to exactly one phase.
+Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phase detail.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (to be mapped by roadmap) | | |
+| ING-01 | Phase 2 | Pending |
+| ING-02 | Phase 2 | Pending |
+| ING-03 | Phase 2 | Pending |
+| ING-04 | Phase 2 | Pending |
+| ING-05 | Phase 2 | Pending |
+| AI-01 | Phase 3 | Pending |
+| AI-02 | Phase 3 | Pending |
+| AI-03 | Phase 3 | Pending |
+| AI-04 | Phase 3 | Pending |
+| PARSE-01 | Phase 3 | Pending |
+| PARSE-02 | Phase 3 | Pending |
+| PARSE-03 | Phase 3 | Pending |
+| PARSE-04 | Phase 3 | Pending |
+| PARSE-05 | Phase 3 | Pending |
+| QBO-01 | Phase 4 | Pending |
+| QBO-02 | Phase 4 | Pending |
+| QBO-03 | Phase 4 | Pending |
+| QBO-04 | Phase 4 | Pending |
+| QBO-05 | Phase 4 | Pending |
+| RECON-01 | Phase 5 | Pending |
+| RECON-02 | Phase 5 | Pending |
+| RECON-03 | Phase 5 | Pending |
+| RECON-04 | Phase 5 | Pending |
+| REVIEW-01 | Phase 6 | Pending |
+| REVIEW-02 | Phase 6 | Pending |
+| REVIEW-03 | Phase 6 | Pending |
+| REVIEW-04 | Phase 6 | Pending |
+| REVIEW-05 | Phase 6 | Pending |
+| REVIEW-06 | Phase 6 | Pending |
+| REVIEW-07 | Phase 6 | Pending |
+| REVIEW-08 | Phase 6 | Pending |
+| REVIEW-09 | Phase 6 | Pending |
+| POST-01 | Phase 7 | Pending |
+| POST-02 | Phase 7 | Pending |
+| POST-03 | Phase 7 | Pending |
+| POST-04 | Phase 7 | Pending |
+| POST-05 | Phase 7 | Pending |
+| AUDIT-01 | Phase 7 | Pending |
+| AUDIT-02 | Phase 7 | Pending |
+| AUDIT-03 | Phase 7 | Pending |
+| AUDIT-04 | Phase 7 | Pending |
+| REPORT-01 | Phase 7 | Pending |
+| BRAND-01 | Phase 1 | Pending |
+| BRAND-02 | Phase 1 | Pending |
+| PLAT-01 | Phase 1 | Pending |
+| PLAT-02 | Phase 1 | Pending |
+| PLAT-03 | Phase 8 | Pending |
+| PLAT-04 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 48 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 48 (pending roadmap)
+- Mapped to phases: 48
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-22*
-*Last updated: 2026-07-22 after initial definition*
+*Last updated: 2026-07-22 after roadmap creation (traceability populated, 48/48 mapped)*
