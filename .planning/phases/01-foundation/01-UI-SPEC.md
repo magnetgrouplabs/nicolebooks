@@ -1,7 +1,7 @@
 ---
 phase: 1
 slug: foundation
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-22
@@ -52,6 +52,8 @@ The frame is a real, reusable app shell (D-07), not a splash. Fixed structural d
 | Content region | Swappable single-child area to the right of the sidebar, below the header, background = dominant surface, 24px padding. | D-07; tokens.json `space.6` = 24px |
 | Default active destination on launch | Bills | D-09 (first destination) |
 | Structural radius | 0 for sidebar, header, and workspace panels; never rounded. | tokens.json `radiusUsage.structural` = 0; D-09 |
+
+**Visual hierarchy / focal point:** On first launch (Bills screen), the centered empty-state heading (Jost 24px 600) is the primary visual anchor. The active sidebar item, violet text plus a violet left-edge indicator bar, is the secondary anchor. The wordmark reads as calm brand identity, not a focal point. Every other surface stays low-emphasis so the eye lands on the empty-state message first. On the Settings screen the "Secret store" health indicator card is the primary anchor.
 
 ---
 
@@ -223,11 +225,11 @@ No third-party registries are declared for this phase, so the registry vetting g
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (was FLAG; focal-point declaration added to Layout Frame)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS (FLAG was non-blocking; supplementary steps 12/20/40 and structural 56/280 are multiples of 4 and justified in-spec)
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved (gsd-ui-checker, 2026-07-22). 6/6 dimensions passed the safety gate. Two FLAGs were non-blocking recommendations; the Visuals focal-point recommendation was applied.
