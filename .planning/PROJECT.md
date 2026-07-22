@@ -18,13 +18,13 @@ Turn a folder of mixed bill documents into correctly categorized, non-duplicate 
 
 ### Active
 
-- [ ] User drops bill files (PDF and image) into a folder named for the entry date, and the app picks them up
+- [ ] User drops bill files (PDF and image) into a folder named for the entry date, and the app loads them on a manual scan
 - [ ] App extracts vendor, amount, category, and line items from each document (mixed digital PDFs and photos)
 - [ ] Parsing uses programmatic text extraction for digital PDFs plus a vision-capable model for structuring, with a deterministic validation layer
 - [ ] App reconciles extracted vendor, category, and items against existing QuickBooks records and prefers existing matches over creating new ones when a reasonable fit exists
 - [ ] Each parsed bill is presented in a review table with editable dropdowns for vendor and category and an editable amount field
 - [ ] Each row supports a transaction type control (unpaid Bill vs already-paid Expense), and Expense rows expose a "Paid from" account picker
-- [ ] Review table supports multi-line itemized bills as well as single-category bills
+- [ ] Review table codes each bill to a single expense category (multi-line itemized splitting deferred to v2)
 - [ ] Low-confidence parsed fields are flagged so the user double-checks them
 - [ ] User clicks "Send to QuickBooks" and approved entries post to QuickBooks Online via the API
 - [ ] Strong duplicate guardrails: file-hash dedupe, warnings on likely duplicates (vendor plus amount plus date), and an audit log of everything sent with returned QuickBooks IDs
