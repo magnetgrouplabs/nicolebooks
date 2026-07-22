@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-07-22T20:13:33.135Z"
+last_updated: "2026-07-22T20:31:01.585Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-07-22
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 38%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███░░░░░░░] 25%
 *Updated after each plan completion*
 | Phase 1 P1 | 14min | 3 tasks | 15 files |
 | Phase 01 P02 | 9min | 3 tasks | 7 files |
+| Phase 01 P03 | 14min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Foundation: better-sqlite3 13.0.1 rebuilt against Electron 43 ABI on Windows via prebuilt binary (no source compile, no MSVC/Python); Mac rebuild deferred to 01-07 cross-OS gate
 - [Phase ?]: Foundation: typed IPC boundary defined once in src/shared/ipc-contract.ts (seven channel constants) with Zod payload schemas; preload exposes only named window.api methods, never raw ipcRenderer (SC4, threats T-01-02/T-01-03)
 - [Phase ?]: Foundation: fixed pre-existing TS 7 baseUrl typecheck breakage (migrated tsconfig path maps to relative); node TS project now emits declarations only so the renderer can consume the preload type across the process split
+- [Phase ?]: Foundation: base-nova shadcn resolves the Base UI primitive (@base-ui/react 1.6.0 pinned), not classic Radix; 01-06 wires components against @base-ui/react and wraps the tree in TooltipProvider
+- [Phase ?]: Foundation: BRAND-01 theme seam wired in renderer globals.css (Tailwind v4 @theme, light and dark palettes, local @font-face for Jost and DM Sans, semantic and chart colors); values authored from vendored tokens.json (fg #343434, muted-fg #6e6e73), not the marketing site
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-22T20:13:33.125Z
+Last session: 2026-07-22T20:29:51.782Z
 Stopped at: Completed 01-02-PLAN.md
 Resume file: None
