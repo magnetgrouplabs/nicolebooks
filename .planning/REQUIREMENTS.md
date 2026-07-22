@@ -78,8 +78,8 @@ Requirements for the initial release. Each maps to a roadmap phase.
 
 ### Branding (BRAND)
 
-- [ ] **BRAND-01**: App is styled with the Magnet Group brand tokens (colors and typography)
-- [ ] **BRAND-02**: App displays a plain "NicoleBooks" wordmark and uses no logo
+- [x] **BRAND-01**: App is styled with the Magnet Group brand tokens (colors and typography)
+- [x] **BRAND-02**: App displays a plain "NicoleBooks" wordmark and uses no logo
 
 ### Platform and Security (PLAT)
 
@@ -174,8 +174,8 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 | AUDIT-03 | Phase 7 | Pending |
 | AUDIT-04 | Phase 7 | Pending |
 | REPORT-01 | Phase 7 | Pending |
-| BRAND-01 | Phase 1 | Pending |
-| BRAND-02 | Phase 1 | Pending |
+| BRAND-01 | Phase 1 | Complete |
+| BRAND-02 | Phase 1 | Complete |
 | PLAT-01 | Phase 1 | Complete |
 | PLAT-02 | Phase 1 | Complete |
 | PLAT-03 | Phase 8 | Pending |

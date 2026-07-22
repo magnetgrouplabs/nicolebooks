@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-07-22T20:58:21.684Z"
+last_updated: "2026-07-22T21:12:02.971Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-07-22
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████░░░░] 63%
 | Phase 01 P03 | 14min | 2 tasks | 15 files |
 | Phase 01 P04 | 4min | 2 tasks | 7 files |
 | Phase 01 P05 | 3min | 2 tasks | 6 files |
+| Phase 01 P06 | 6min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,10 @@ Recent decisions affecting current work:
 - [Phase 01]: Foundation: safeStorage secret store (secretStore.set/get/delete/available) writes base64 ciphertext only to userData/secrets.enc mode 0o600, throws SECRET_STORE_UNAVAILABLE when unavailable, never touches SQLite (D-12) and never logs secrets (T-01-05); no-secret-leak test proves the canary absent from secrets.enc, app.db, and logs
 - [Phase 01]: Foundation: IPC handlers are sender-validated then Zod-gated before any privileged action (SC4/T-01-03); assertTrustedSender validates the frame origin (file:// packaged or the exact ELECTRON_RENDERER_URL dev origin), single-sourced in src/main/ipc/trusted-sender.ts
 - [Phase 01]: Foundation: ready-time ordering is getDatabase()+migrate(db) before the window then registerIpc() after it, so app_settings exists before the renderer loads and safeStorage/handlers init post-ready; secrets handlers return null when the store is unavailable rather than leaking a stack trace (T-01-05)
+- [Phase ?]: Foundation: 01-06 branded shell wired against Base UI (@base-ui/react) with the tree wrapped in TooltipProvider; App uses a CSS grid (56px header row, 280px sidebar column), header spanning both columns, swappable content region, default Bills (D-09)
+- [Phase ?]: Foundation: OS light/dark mirror awaits the async window.api.theme.get() before the first React render then subscribes to onChange; with the window hidden until ready-to-show this yields no theme flash (RESEARCH Pitfall 4)
+- [Phase ?]: Foundation: HealthIndicator is the permanent SC2+SC4 proof (D-11); on mount it stores then reads a canary through window.api.secrets and renders Secret store: OK only on an exact round-trip match, never rendering or logging the secret (T-01-05)
+- [Phase ?]: Foundation: all renderer components use only semantic brand-token classes (text-primary, hover primary tint, focus ring token, success/destructive) with structural radius 0 for header/sidebar; zero hardcoded hex
 
 ### Pending Todos
 
@@ -99,6 +104,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-22T20:58:21.674Z
+Last session: 2026-07-22T21:10:58.641Z
 Stopped at: Completed 01-05-PLAN.md
 Resume file: None
