@@ -12,7 +12,10 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --build",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "postinstall": "npm run rebuild"
+    "postinstall": "npm run rebuild",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "vitest run && playwright test"
   },
   "dependencies": {
     "better-sqlite3": "13.0.1",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
+    "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "26.1.1",
@@ -37,6 +41,7 @@
     "electron-vite": "5.0.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.1.5"
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
   }
 }
