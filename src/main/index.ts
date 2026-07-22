@@ -1,5 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { getDatabase } from './db/connection'
+import { migrate } from './db/migrate'
+import { registerIpc } from './ipc/register'
 
 // Dev vs packaged: electron-vite injects ELECTRON_RENDERER_URL during `electron-vite dev`.
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
@@ -47,7 +50,19 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    // Open the SQLite connection and apply the forward-only migrations before the window
+    // loads, so app_settings exists on first run when the renderer's settings round trip
+    // fires. getDatabase opens userData/app.db and migrate applies pending schema changes
+    // (idempotent). This runs after app 'ready' because app.getPath needs the app initialized.
+    const db = getDatabase()
+    migrate(db)
+
     createWindow()
+
+    // Register every IPC handler after the window exists and the app is ready, so safeStorage
+    // and the handlers initialize post-ready (RESEARCH Pitfall 3). The renderer's window.api
+    // now reaches live, sender-validated, Zod-gated handlers.
+    registerIpc()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
