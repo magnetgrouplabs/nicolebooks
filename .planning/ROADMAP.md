@@ -53,7 +53,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-05-PLAN.md - Zod-gated IPC handlers and main-process registration
+- [x] 01-05-PLAN.md - Zod-gated IPC handlers and main-process registration
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 4/8 | In Progress|  |
+| 1. Foundation | 5/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 0/TBD | Not started | - |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
