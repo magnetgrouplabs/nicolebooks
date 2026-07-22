@@ -35,7 +35,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The app stores and retrieves a secret from the OS keychain (Windows Credential Manager, macOS Keychain), and no secret is ever written to the SQLite database, a plaintext file, or logs.
   3. The app creates its local SQLite database on first run and applies schema migrations, so data survives a restart.
   4. The renderer performs no direct filesystem, database, keychain, or network access; every such action routes through the typed IPC boundary.
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+- [ ] 01-01-PLAN.md - Scaffold, hardened shell, native rebuild (Windows), and test harness
+- [ ] 01-02-PLAN.md - Typed IPC contract, Zod schemas, and sandbox-safe preload bridge
+- [ ] 01-03-PLAN.md - Magnet Group brand theme: vendored tokens, local fonts, shadcn
+- [ ] 01-04-PLAN.md - SQLite persistence with migrations and the safeStorage secret store
+- [ ] 01-05-PLAN.md - Zod-gated IPC handlers and main-process registration
+- [ ] 01-06-PLAN.md - Branded app shell, three screens, and the Secret store health round trip
+- [ ] 01-07-PLAN.md - End-to-end validation suite and cross-OS CI
+- [ ] 01-08-PLAN.md - Cross-OS real-machine verification checkpoint
 **UI hint**: yes
 
 ### Phase 2: Ingestion and Dedupe
@@ -136,7 +145,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/TBD | Not started | - |
+| 1. Foundation | 0/8 | Not started | - |
 | 2. Ingestion and Dedupe | 0/TBD | Not started | - |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
