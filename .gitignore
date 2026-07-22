@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Secrets and local data (never commit these)
+secrets.enc
+*.db
+*.db-journal
+*.db-wal
+.env*
+
+# Test artifacts
+playwright-report/
+test-results/
+coverage/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log

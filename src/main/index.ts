@@ -1,0 +1,60 @@
+import { app, BrowserWindow } from 'electron'
+import { join } from 'node:path'
+
+// Dev vs packaged: electron-vite injects ELECTRON_RENDERER_URL during `electron-vite dev`.
+const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
+
+function createWindow(): void {
+  // Single hardened BrowserWindow (RESEARCH Pattern 2, threat T-01-01).
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 940,
+    minHeight: 600,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true, // renderer cannot reach main globals
+      sandbox: true, // renderer runs in an OS sandbox
+      nodeIntegration: false, // never expose Node to the renderer
+      webSecurity: true // keep same-origin protections on
+    }
+  })
+
+  win.once('ready-to-show', () => win.show())
+
+  // Block all in-app navigation and new windows (nothing external in Phase 1, threat T-01-07).
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => event.preventDefault())
+
+  if (rendererDevUrl) {
+    win.loadURL(rendererDevUrl)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// Single-instance lock: a second launch focuses the existing window instead of opening another.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const [existing] = BrowserWindow.getAllWindows()
+    if (existing) {
+      if (existing.isMinimized()) existing.restore()
+      existing.focus()
+    }
+  })
+
+  app.whenReady().then(() => {
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}
