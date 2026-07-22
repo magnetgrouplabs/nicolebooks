@@ -1,0 +1,59 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-22T21:55:04.514Z",
+  "phase": "01",
+  "phase_name": "foundation",
+  "phase_dir": ".planning/phases/01-foundation",
+  "plan": 8,
+  "task": 1,
+  "total_tasks": 1,
+  "status": "paused",
+  "context_summary": "Phase 01 execution is 7 of 8 plans complete. Paused at the 01-08 human-verify checkpoint (the cross-OS acceptance gate), awaiting the user's decision on how to close it. Execution ran sequentially on the main working tree with worktrees disabled for this run.",
+  "completed_tasks": [
+    {"id": "01-01", "name": "Scaffold, hardened shell, better-sqlite3 native rebuild (Windows), Vitest plus Playwright harness", "status": "done", "commit": "714afb0"},
+    {"id": "01-02", "name": "Typed IPC contract, Zod schemas, sandbox-safe preload bridge, typed window.api", "status": "done", "commit": "082d893"},
+    {"id": "01-03", "name": "Magnet Group brand theme: vendored tokens, local Jost plus DM Sans fonts, globals.css, shadcn primitives", "status": "done", "commit": "b1ca469"},
+    {"id": "01-04", "name": "SQLite connection plus migration runner (app_settings) and safeStorage secret store with no-leak proof", "status": "done", "commit": "a01bf05"},
+    {"id": "01-05", "name": "Zod-gated, sender-validated ipcMain.handle handlers plus registerIpc wiring in main bootstrap", "status": "done", "commit": "52af377"},
+    {"id": "01-06", "name": "Branded app shell, three placeholder screens, Secret store health round trip, OS theme mirror", "status": "done", "commit": "73f4f5d"},
+    {"id": "01-07", "name": "End-to-end Playwright specs (SC1 to SC4) plus Windows and macOS CI matrix; fixed preload electron externalization bug", "status": "done", "commit": "961c902"}
+  ],
+  "remaining_tasks": [
+    {"id": "01-08", "name": "Cross-OS real-machine human verification (native rebuild, keychain OK plus locked-unavailable, visual brand fidelity in light and dark on Mac and Windows)", "status": "not_started", "note": "checkpoint:human-verify, blocking gate, modifies no code. This is the phase acceptance gate."}
+  ],
+  "post_checkpoint_steps": [
+    "verify_phase_goal: spawn gsd-verifier for phase 01, create 01-VERIFICATION.md",
+    "code_review_gate: Skill gsd-code-review 01 (advisory, non-blocking)",
+    "update_roadmap: gsd-sdk query phase.complete 01, then commit tracking files",
+    "offer_next: manual invocation so STOP and present next-phase options (do not auto-advance)"
+  ],
+  "blockers": [
+    {"description": "01-08 Mac leg requires a real Mac (native rebuild prebuild availability for Electron 43 is unverified; the locked-login-keychain unavailable path cannot be reproduced in CI). Visual brand fidelity needs human eyes against the UI-SPEC in both light and dark.", "type": "human_action", "workaround": "Claude can drive the Windows half live from this machine (launch built app, screenshot shell in light and dark, confirm Secret store: OK); the Mac leg still needs a human on a Mac."}
+  ],
+  "human_actions_pending": [
+    {"action": "Decide how to close the 01-08 cross-OS verification checkpoint", "context": "The AskUserQuestion presenting four options (Claude drives Windows half now / defer to a tracked HUMAN-UAT item / user self-verifies and approves / report a defect) was interrupted by the pause. The user asked to clarify the question first.", "blocking": true},
+    {"action": "Cross-OS verification on a real Mac", "context": "01-08 how-to-verify steps: npm ci then npx electron-rebuild -f -w better-sqlite3 (exit 0, no NODE_MODULE_VERSION); npm run build then npx vitest run and npx playwright test (all green); Settings shows Secret store: OK; locked keychain shows the exact unavailable copy; brand fidelity matches UI-SPEC in light and dark.", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Electron over Tauri/Rust for the desktop framework", "rationale": "User confirmed after reviewing the research reasoning: Node backend ecosystem covers every dependency (intuit-oauth, OpenAI SDK, PDF, sharp plus HEIC, better-sqlite3, safeStorage), builder is JS/TS not Rust, and safeStorage plus electron-builder plus electron-updater give the lowest deployment headache. PROJECT.md Key Decisions flipped from Pending to Confirmed.", "phase": "01", "commit": "4d83e2a"},
+    {"decision": "Execute this phase sequentially on the main working tree with worktrees disabled", "rationale": "Greenfield Electron project with native modules (better-sqlite3): node_modules is gitignored, so worktree isolation would force a full npm install plus Electron native rebuild in each of six waves and destroy it on cleanup. Only Wave 2 had any parallelism to gain. Sequential installs node_modules once (in 01-01) and reuses it for every later plan. Kept scoped to this run; workflow.use_worktrees was NOT persisted to false.", "phase": "01"},
+    {"decision": "UI wired against @base-ui/react 1.6.0 (Base UI), not classic Radix, with a TooltipProvider at the tree root", "rationale": "The shadcn base-nova registry resolved @base-ui/react during 01-03 rather than Radix. Pinned exact. 01-06 wired components and the provider accordingly. Downstream UI phases must follow this.", "phase": "01"}
+  ],
+  "notable_findings": [
+    "01-07 caught and fixed a real production bug: the packaged preload was bundling node_modules/electron/index.js (the executable-path shim) instead of the runtime built-in, leaving window.api undefined at renderer boot (latent since 01-06). Fixed by marking electron external in the preload build in electron.vite.config.ts. This unblocks every downstream renderer feature and Phase 8 packaging.",
+    "electron-vite 5 peer range tops out at vite 7 while the pinned vite is 8.1.5; resolved with .npmrc legacy-peer-deps (no package substituted), build verified functional.",
+    "TypeScript 7.0.2 removed tsconfig baseUrl; path maps were migrated to relative form in 01-02.",
+    "Requirement marking across summaries is slightly inconsistent (01-04 marked PLAT-01 and PLAT-02 complete; 01-01/01-02/01-07 treat PLAT-01 as only advanced until the 01-08 real-machine gate). The gsd-verifier should reconcile PLAT-01 status against the 01-08 outcome."
+  ],
+  "uncommitted_files": [
+    {"path": ".planning/config.json", "note": "Modified BEFORE this session started (pre-existing, out of scope). Every executor intentionally left it unstaged. Not part of Phase 01 execution work."}
+  ],
+  "verification_state": {
+    "unit_tests": "36 passing (vitest, 4 files) as of after 01-06",
+    "e2e_tests": "5 Playwright _electron specs passing on Windows (SC1 to SC4) as of 01-07",
+    "build": "npm run build exit 0; tsc --build exit 0",
+    "ci": ".github/workflows/ci.yml authored for windows-latest plus macos-latest; not yet run on GitHub Actions"
+  },
+  "next_action": "Re-present the 01-08 checkpoint decision. The user asked to clarify the four options first, so start by asking what they want clarified (for example whether a Mac is available, or exactly what deferring means for phase completion), then act on their choice. After the checkpoint resolves, run verify_phase_goal, code_review_gate, and update_roadmap, then STOP and present next-phase options (manual invocation, no auto-advance).",
+  "context_notes": "Do NOT re-run plans 01-01 to 01-07; they are complete with committed SUMMARYs. Do NOT re-scaffold. node_modules is already installed on the main tree. Keep executing sequentially on the main tree (worktrees stay disabled for this phase). Honor the project hard rules at all times: no em dashes or en dashes anywhere, plain NicoleBooks wordmark with no logo, and no owner/founder/family personal names in any copy (max allowed is family-owned)."
+}
