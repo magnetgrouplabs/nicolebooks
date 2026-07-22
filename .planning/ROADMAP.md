@@ -49,7 +49,7 @@ Plans:
 
 - [x] 01-02-PLAN.md - Typed IPC contract, Zod schemas, and sandbox-safe preload bridge
 - [x] 01-03-PLAN.md - Magnet Group brand theme: vendored tokens, local fonts, shadcn
-- [ ] 01-04-PLAN.md - SQLite persistence with migrations and the safeStorage secret store
+- [x] 01-04-PLAN.md - SQLite persistence with migrations and the safeStorage secret store
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 3/8 | In Progress|  |
+| 1. Foundation | 4/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 0/TBD | Not started | - |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |

@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-07-22T20:31:01.585Z"
+last_updated: "2026-07-22T20:45:20.785Z"
 last_activity: 2026-07-22
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-07-22
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [████░░░░░░] 38%
 | Phase 1 P1 | 14min | 3 tasks | 15 files |
 | Phase 01 P02 | 9min | 3 tasks | 7 files |
 | Phase 01 P03 | 14min | 2 tasks | 15 files |
+| Phase 01 P04 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Foundation: fixed pre-existing TS 7 baseUrl typecheck breakage (migrated tsconfig path maps to relative); node TS project now emits declarations only so the renderer can consume the preload type across the process split
 - [Phase ?]: Foundation: base-nova shadcn resolves the Base UI primitive (@base-ui/react 1.6.0 pinned), not classic Radix; 01-06 wires components against @base-ui/react and wraps the tree in TooltipProvider
 - [Phase ?]: Foundation: BRAND-01 theme seam wired in renderer globals.css (Tailwind v4 @theme, light and dark palettes, local @font-face for Jost and DM Sans, semantic and chart colors); values authored from vendored tokens.json (fg #343434, muted-fg #6e6e73), not the marketing site
+- [Phase 01]: Foundation: SQLite persistence seam is a lazy migrating singleton (getDatabase opens userData/app.db and runs forward-only user_version migrations on first access) plus a pure openDatabase(path) opener for tests; migration 0001 creates only app_settings STRICT, no feature tables (D-13/D-15)
+- [Phase 01]: Foundation: safeStorage secret store (secretStore.set/get/delete/available) writes base64 ciphertext only to userData/secrets.enc mode 0o600, throws SECRET_STORE_UNAVAILABLE when unavailable, never touches SQLite (D-12) and never logs secrets (T-01-05); no-secret-leak test proves the canary absent from secrets.enc, app.db, and logs
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-22T20:29:51.782Z
+Last session: 2026-07-22T20:42:33.975Z
 Stopped at: Completed 01-02-PLAN.md
 Resume file: None

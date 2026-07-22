@@ -83,8 +83,8 @@ Requirements for the initial release. Each maps to a roadmap phase.
 
 ### Platform and Security (PLAT)
 
-- [ ] **PLAT-01**: App runs on both Windows and Mac
-- [ ] **PLAT-02**: All secrets (QuickBooks tokens, AI key) are stored in the OS keychain and are never committed to the repo or written to logs
+- [x] **PLAT-01**: App runs on both Windows and Mac
+- [x] **PLAT-02**: All secrets (QuickBooks tokens, AI key) are stored in the OS keychain and are never committed to the repo or written to logs
 - [ ] **PLAT-03**: App ships as a signed, installable build for Windows and Mac
 - [ ] **PLAT-04**: App can update itself from the private release channel
 
@@ -176,8 +176,8 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 | REPORT-01 | Phase 7 | Pending |
 | BRAND-01 | Phase 1 | Pending |
 | BRAND-02 | Phase 1 | Pending |
-| PLAT-01 | Phase 1 | Pending |
-| PLAT-02 | Phase 1 | Pending |
+| PLAT-01 | Phase 1 | Complete |
+| PLAT-02 | Phase 1 | Complete |
 | PLAT-03 | Phase 8 | Pending |
 | PLAT-04 | Phase 8 | Pending |
 
