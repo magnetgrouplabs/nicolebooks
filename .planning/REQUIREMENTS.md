@@ -9,10 +9,10 @@ Requirements for the initial release. Each maps to a roadmap phase.
 
 ### Ingestion (ING)
 
-- [ ] **ING-01**: User can place bill files (PDF and image) into a folder named for the entry date, and the app associates that date with those bills
-- [ ] **ING-02**: User can trigger a manual scan of a chosen folder to load its bill files for processing
-- [ ] **ING-03**: App parses the folder name into an entry date and prompts the user when the name cannot be read as a date, never silently defaulting to today
-- [ ] **ING-04**: App computes a file hash for each document and skips-and-flags any exact file it has already processed
+- [ ] **ING-01**: User can drop bill files (PDF and image) into a single flat inbox folder, and the app loads them on a manual scan and stamps the batch with the processing date as its entry date
+- [ ] **ING-02**: User configures the inbox once in Settings (the app creates a sensible default), then triggers a manual "Scan now" to load its supported bill files for processing
+- [ ] **ING-03**: App skips files that are unsupported or not fully materialized (cloud-sync placeholders, partial writes) and surfaces skipped files in a summary rather than silently dropping them
+- [ ] **ING-04**: App computes a SHA-256 file hash for each document and skips-and-flags any exact file it has already posted to QuickBooks (excluded by default, with an override)
 - [ ] **ING-05**: App accepts common bill formats: text PDFs, scanned or photographed images (JPEG, PNG), and iPhone HEIC photos
 
 ### AI Configuration (AI)
@@ -188,4 +188,4 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 
 ---
 *Requirements defined: 2026-07-22*
-*Last updated: 2026-07-22 after roadmap creation (traceability populated, 48/48 mapped)*
+*Last updated: 2026-07-23 after Phase 2 discuss reshape (ING-01..04 revised for the flat-inbox / processing-date model; IDs and 48/48 mapping preserved)*

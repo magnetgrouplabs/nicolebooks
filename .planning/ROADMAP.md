@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Parallelism:** Phases 2, 3, and 4 each depend only on Phase 1, so ingestion (Phase 2), the AI parse pipeline (Phase 3), and the QuickBooks sandbox connection (Phase 4) have no hard ordering dependency on one another. Phase 4 is gated on sandbox credentials, which are available immediately, unlike production credentials.
 
 - [ ] **Phase 1: Foundation** - Two-process app shell, IPC trust boundary, SQLite persistence, OS-keychain secret store, and Magnet Group brand tokens
-- [ ] **Phase 2: Ingestion and Dedupe** - Date-named folder scan, supported formats, folder-name date parsing, and SHA-256 file-hash dedupe
+- [ ] **Phase 2: Ingestion and Dedupe** - Flat-inbox manual scan, supported formats, processing-date stamping, file-stability checks, and SHA-256 file-hash dedupe
 - [ ] **Phase 3: AI Client and Parse Pipeline** - OpenAI-compatible model config, text extraction plus image prep, vision structuring, deterministic validation with confidence signals
 - [ ] **Phase 4: QuickBooks Connection (Sandbox)** - Guided OAuth, rotated-refresh-token handling, reconnect state, and realm-scoped reference cache (LIVE-CREDENTIALS PAUSE)
 - [ ] **Phase 5: Reconciliation and Matching** - Prefer-existing fuzzy matching for vendors and categories with account-type-filtered candidates
@@ -71,15 +71,15 @@ Plans:
 
 ### Phase 2: Ingestion and Dedupe
 
-**Goal**: The user can point the app at a date-named folder and load its bill files on a manual scan, with exact duplicates caught before any processing.
+**Goal**: The user can drop bill files into one flat inbox folder and load them on a manual scan, with exact duplicates (files already posted to QuickBooks) caught before any processing.
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: ING-01, ING-02, ING-03, ING-04, ING-05
 **Success Criteria** (what must be TRUE):
 
-  1. User can place bill files (text PDFs, JPEG, PNG, and iPhone HEIC photos) into a folder named for the entry date and trigger a manual scan that loads them for processing.
-  2. The app reads the entry date from the folder name and, when the name cannot be parsed as a date, prompts the user instead of silently defaulting to today.
-  3. The app computes a file hash for each document and skips-and-flags any exact file it has already processed, so re-dropping the same file creates no duplicate work.
+  1. User can drop bill files (text PDFs, JPEG, PNG, and iPhone HEIC photos) into a single flat inbox folder, configured once in Settings and created by the app, and trigger a manual scan that loads the supported files for processing while surfacing any skipped unsupported files.
+  2. The app assigns the scanned batch the processing date (the day of the scan) as its entry date, which the user can change later during review, rather than reading a date from folder names.
+  3. The app computes a SHA-256 file hash for each document and skips-and-flags any exact file it has already posted to QuickBooks, excluding it from the batch by default with a one-click override, so re-dropping an already-entered file creates no duplicate work.
   4. The app waits for files to fully materialize before hashing, so cloud-sync placeholder files and partially written files are not processed as if complete.
 
 **Plans**: TBD
@@ -200,3 +200,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 ---
 *Roadmap created: 2026-07-22*
 *Coverage: 48/48 v1 requirements mapped*
+*Last updated: 2026-07-23, Phase 2 reshaped to the flat-inbox / processing-date model (goal and success criteria revised; ING-01..04 updated, IDs and count preserved)*
