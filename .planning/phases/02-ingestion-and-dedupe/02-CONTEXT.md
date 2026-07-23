@@ -10,7 +10,7 @@ Phase 2 delivers the ingestion front-door. Nicole drops bill files into one flat
 
 Downstream is out of scope here: parsing/field extraction (Phase 3), reconciliation (Phase 5), the rich editable review table (Phase 6), posting/audit/archiving (Phase 7).
 
-**Requirements in scope:** ING-01, ING-02, ING-03, ING-04, ING-05 — but note that this discussion deliberately reshaped the ingestion model (flat inbox + processing-date instead of user-dated folders). ING-01 and ING-03 (and Success Criteria 1-2) must be revised to match. See Deferred Ideas → "Requirements/roadmap revision (ACTION NEEDED)".
+**Requirements in scope:** ING-01, ING-02, ING-03, ING-04, ING-05 — this discussion deliberately reshaped the ingestion model (flat inbox + processing-date instead of user-dated folders), and REQUIREMENTS.md + ROADMAP.md have already been revised to match (done 2026-07-23, commit f184d0a). ING-01..04 and Phase 2 goal/success-criteria now reflect the flat-inbox / processing-date model; IDs and the 48/48 count are preserved. Plan and verify against the current ROADMAP/REQUIREMENTS.
 
 </domain>
 
@@ -122,7 +122,7 @@ Paths are relative to the NicoleBooks repo root (`C:/Users/anthony/claude-projec
 ## Deferred Ideas
 
 - **App-created dated-subfolder archive (Phase 7):** after a bill posts to QuickBooks, move its source file into a `Posted`/`Archive` folder under an app-created dated subfolder. Belongs in Phase 7 (post/audit), because "processed" only truly means "in the books" after posting. Pairs with the `Inbox` naming chosen here (D-02).
-- **Requirements/roadmap revision (ACTION NEEDED before Phase 2 verification):** update REQUIREMENTS.md and ROADMAP.md to match the flat-inbox / processing-date model — drop ING-03 and Success Criterion 2 (folder-name date parse + prompt), rewrite ING-01 and Success Criterion 1 (flat inbox rather than a date-named folder), and reflect that the entry date is the processing date. Otherwise `gsd-verifier` will check Phase 2 against removed criteria and fail it. This is a project-owner decision already made in this discussion; it needs writing into the roadmap through the proper channel (`gsd-sdk query roadmap.*`, not a direct edit).
+- **Requirements/roadmap revision (DONE 2026-07-23, commit f184d0a):** REQUIREMENTS.md and ROADMAP.md were updated to match the flat-inbox / processing-date model — repurposed ING-03 from folder-name date parse/prompt to the skip/materialization guarantee, rewrote ING-01/ING-02/ING-04, and revised the Phase 2 goal and Success Criteria 1-3. Entry date is now the processing date. IDs and the 48/48 mapping are preserved, so `gsd-verifier` will check Phase 2 against the correct criteria. No open action remains here.
 - **Background auto-watcher (already tracked as V2-03):** explicitly not this phase; the scan stays manual.
 
 </deferred>
