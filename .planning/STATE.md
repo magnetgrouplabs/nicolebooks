@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-07-22T21:31:40.236Z"
-last_activity: 2026-07-22
+status: awaiting-human-uat
+stopped_at: Phase 01 verified in code (01-VERIFICATION.md, 0 defects); 01-08 cross-OS human UAT deferred and tracked
+last_updated: "2026-07-23"
+last_activity: 2026-07-23
 progress:
   total_phases: 8
   completed_phases: 0
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 
 ## Current Position
 
-Phase: 01 (foundation) — EXECUTING
-Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-07-22
+Phase: 01 (foundation) — CODE-VERIFIED, PENDING HUMAN UAT
+Plan: 8 of 8 (01-08 is a cross-OS human-verify gate, deferred and tracked)
+Status: Phase goal met in code per 01-VERIFICATION.md (0 defects; build + 36 unit tests re-run green). NOT marked complete: the 01-08 real-machine gate is deferred to human UAT by user decision. Close via /gsd:verify-work 01 after the real-machine checks.
+Last activity: 2026-07-23
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 88% (7/8 plans complete; 01-08 deferred to UAT)
 
 ## Performance Metrics
 
@@ -94,6 +94,7 @@ None yet.
 
 ### Blockers/Concerns
 
+- Phase 01 acceptance is NOT closed: the 01-08 cross-OS human verification (real Mac plus real Windows, light and dark) is deferred and tracked (see Deferred Items). Downstream Phases 2/3/4 are unblocked (they depend only on Phase 01 code, which is verified), but the phase stays pending until the checks pass and /gsd:verify-work 01 is run. Surfaces in /gsd:audit-uat and /gsd:progress.
 - Phase 4 (QuickBooks Connection) is gated on Anthony providing QuickBooks sandbox client id, client secret, and redirect URI. Sandbox credentials are available immediately; production credentials come later at Phase 8.
 - Phase 8 packaging depends on code-signing certificates with real lead time (Apple Developer Program enrollment, Windows HSM or cloud code-signing). Start procurement early, well before Phase 8 opens.
 - OAuth token-lifecycle facts changed in November 2025 (60-minute access tokens, roughly 24-hour refresh-token rotation, 5-year cap, mandatory Reconnect URL by Feb 24, 2026). Re-verify against Intuit's live docs at Phase 4 planning time.
@@ -104,10 +105,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Human UAT | 01-08 cross-OS real-machine verification: (1) Mac better-sqlite3 native rebuild (exit 0, no NODE_MODULE_VERSION), (2) keychain OK path plus locked-keychain "unavailable" copy, (3) visual brand fidelity vs 01-UI-SPEC in light and dark on both Mac and Windows. Steps: 01-08-PLAN.md how-to-verify. Close with /gsd:verify-work 01. | Open, tracked | 2026-07-23 (Phase 01) |
 
 ## Session Continuity
 
-Last session: 2026-07-22T21:31:25.976Z
-Stopped at: Completed 01-07-PLAN.md
-Resume file: None
+Last session: 2026-07-23
+Stopped at: Resumed and resolved the 01-08 checkpoint by user decision (defer cross-OS human UAT to a tracked item). Ran phase-goal verification: GOAL MET in code, 0 defects (01-VERIFICATION.md; build + 36 unit tests re-run green). Consumed and deleted HANDOFF.json and .continue-here.md. Phase 01 stays pending on human UAT; next up is Phase 02 (Ingestion and Dedupe).
+Resume file: None (handoff consumed)
