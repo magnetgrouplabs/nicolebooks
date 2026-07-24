@@ -33,6 +33,11 @@ const api: IpcApi = {
       ipcRenderer.on(Channels.themeChanged, listener)
       return () => ipcRenderer.removeListener(Channels.themeChanged, listener)
     }
+  },
+  ingestion: {
+    resolveInbox: () => ipcRenderer.invoke(Channels.ingestionResolveInbox),
+    chooseInbox: () => ipcRenderer.invoke(Channels.ingestionChooseInbox),
+    scan: () => ipcRenderer.invoke(Channels.ingestionScan)
   }
 }
 

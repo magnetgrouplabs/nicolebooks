@@ -35,17 +35,19 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
     expect(leaks.hasModule).toBe(false)
     expect(leaks.hasIpcRenderer).toBe(false)
 
-    // 2. window.api exposes exactly the three named channel groups, nothing more.
+    // 2. window.api exposes exactly the named channel groups, nothing more.
     const apiShape = await window.evaluate(() => ({
       top: Object.keys(window.api).sort(),
       settings: Object.keys(window.api.settings).sort(),
       secrets: Object.keys(window.api.secrets).sort(),
-      theme: Object.keys(window.api.theme).sort()
+      theme: Object.keys(window.api.theme).sort(),
+      ingestion: Object.keys(window.api.ingestion).sort()
     }))
-    expect(apiShape.top).toEqual(['secrets', 'settings', 'theme'])
+    expect(apiShape.top).toEqual(['ingestion', 'secrets', 'settings', 'theme'])
     expect(apiShape.settings).toEqual(['get', 'set'])
     expect(apiShape.secrets).toEqual(['delete', 'get', 'set'])
     expect(apiShape.theme).toEqual(['get', 'onChange'])
+    expect(apiShape.ingestion).toEqual(['chooseInbox', 'resolveInbox', 'scan'])
 
     // 3. A malformed payload (key far over the 128-char bound) is rejected by the main handler,
     //    so the invoke rejects in the renderer rather than performing any privileged action.
