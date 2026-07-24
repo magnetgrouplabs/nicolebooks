@@ -19,6 +19,7 @@ import { Button } from '../components/ui/button'
 export function SettingsScreen(): React.JSX.Element {
   const [inboxPath, setInboxPath] = useState<string | null>(null)
   const [choosing, setChoosing] = useState(false)
+  const [chooseError, setChooseError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -38,10 +39,15 @@ export function SettingsScreen(): React.JSX.Element {
 
   async function chooseInbox(): Promise<void> {
     setChoosing(true)
+    setChooseError(null)
     try {
       const result = await window.api.ingestion.chooseInbox()
       // On a non-canceled result, reflect the chosen path; a canceled dialog is a no-op.
       if (!result.canceled) setInboxPath(result.path)
+    } catch {
+      // The picker rejected (the main handler threw before returning). Surface a plain,
+      // recoverable message instead of leaving the button looking inert (same fix as CR-01).
+      setChooseError('Could not open the folder picker. Please try again.')
     } finally {
       setChoosing(false)
     }
@@ -64,6 +70,14 @@ export function SettingsScreen(): React.JSX.Element {
           Change inbox folder
         </Button>
       </div>
+      {chooseError && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+        >
+          {chooseError}
+        </p>
+      )}
     </div>
   )
 }
