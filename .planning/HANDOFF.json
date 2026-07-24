@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-24T20:46:51.366Z",
+  "phase": "3",
+  "phase_name": "AI Client and Parse Pipeline",
+  "phase_dir": ".planning/phases/03-ai-client-and-parse-pipeline",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 7,
+  "status": "paused",
+  "milestone_note": "Paused at a clean boundary: Phase 3 planning is COMPLETE and plan-checker VERIFIED (passed on revision iteration 2). Nothing has been executed yet. 'total_tasks' here counts the 7 plans to execute, not sub-tasks.",
+  "completed_tasks": [
+    {"id": 1, "name": "Research (03-RESEARCH.md) — stack verified, 6 open directives worked", "status": "done", "commit": "0905199"},
+    {"id": 2, "name": "Anthony's research picks locked as D-19..D-26 in 03-CONTEXT.md (+ RESEARCH/VALIDATION)", "status": "done", "commit": "07a5e3e"},
+    {"id": 3, "name": "Pattern map (03-PATTERNS.md) — 22 files mapped to in-repo analogs", "status": "done", "commit": "3905749"},
+    {"id": 4, "name": "Validation strategy (03-VALIDATION.md) — Nyquist contract, requirement->test map", "status": "done", "commit": "dc65a64"},
+    {"id": 5, "name": "7 plans across 3 waves (03-01..03-07-PLAN.md)", "status": "done", "commit": "2cf0ad5"},
+    {"id": 6, "name": "Plan-checker revision — fixed image-only-PDF blocker + 3 warnings", "status": "done", "commit": "e3b3d7c"},
+    {"id": 7, "name": "Re-verification PASSED + STATE marked planned (ready to execute)", "status": "done", "commit": "fe3f1d6"}
+  ],
+  "remaining_tasks": [
+    {"id": 1, "name": "Execute Wave 1 — 03-01 (foundation: install libs, ai/parse IPC contract + schemas + preload bridge + fake OpenAI client)", "status": "not_started"},
+    {"id": 2, "name": "Execute Wave 2 (5-way parallel) — 03-02 AI-config, 03-03 validate+confidence, 03-04 route+prep, 03-05 vision extraction, 03-06 migration0003 cache", "status": "not_started"},
+    {"id": 3, "name": "Execute Wave 3 — 03-07 pipeline integration (auto-parse, per-file isolation + progress, cache-hit-no-recall, Bills status surface)", "status": "not_started"},
+    {"id": 4, "name": "Verify phase (/gsd:verify-work 3) + end-of-phase human gate (live parse with real key)", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {"action": "Provide an OpenAI-compatible API key + base URL and a vision-capable model for the live end-to-end parse smoke", "context": "Deterministic layers are fully covered by injected-fake unit tests and need NO key; only the end-of-phase human gate (live parse) needs it. Does NOT block starting/executing Phase 3.", "blocking": false},
+    {"action": "Close the still-open Phase 1 01-08 cross-OS human verification (Mac + Windows, light/dark)", "context": "Deferred/tracked from Phase 1; downstream phases are unblocked (depend on verified Phase 1 code). Surfaces in /gsd:audit-uat. Not a Phase 3 blocker.", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "D-19: add @napi-rs/canvas@1.0.2 for image-only-PDF page rendering", "rationale": "Locked stack named no Node canvas; only turnkey way to satisfy D-07. Anthony approved.", "phase": "3"},
+    {"decision": "D-20: Docling-style layered native-vs-scan gate (0.75 bitmap / 0.90 invisible-OCR / 50 chars+font / 50% pages)", "rationale": "Most robust; guards the junk-OCR-poisons-the-model failure. Anthony picked Option B.", "phase": "3"},
+    {"decision": "D-21..D-26: single multi-image call cap-10; second-pass agreement image-only-only; recommended prompt verbatim; parsed_results STRICT cache (JSON confidence + raw_response + truncated col); maxRetries 3 / 120s + fallback ladder; separate parse:parse-batch + parse:progress", "rationale": "Anthony's picks + researcher defaults on lower-stakes items.", "phase": "3"},
+    {"decision": "Honor CLAUDE.md version pins openai@6.48.0 / unpdf@1.6.2 (not the newer 6.49.0/1.7.0)", "rationale": "Locked file is source of truth; Anthony's call. Revisable.", "phase": "3"},
+    {"decision": "Skipped UI-SPEC and AI-SPEC; plan directly reusing Phase 1 branded components", "rationale": "Anthony chose 'plan now'; CONTEXT already covered the AI + confidence design and the framework is settled.", "phase": "3"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "/clear, then /gsd:execute-phase 3 — begins Wave 1 (03-01 foundation). Optionally /gsd:review --phase 3 --all first to peer-review the plans.",
+  "context_notes": "Planning ran clean end-to-end via the local gsd-tools.cjs (gsd-sdk is broken on this machine — see memory). The plan-checker caught ONE real blocker: 03-07 originally routed image-only PDFs to prepImage/sharp, which cannot decode PDF bytes — fixed so image-only PDFs go through renderPdfPageImage (pdfjs + @napi-rs/canvas). The executor must implement that branch as written and NOT collapse it back. All 9 REQ-IDs and all 26 decisions are covered by tasks. Every plan opens with a Wave-0 RED test task and carries a threat_model block (ASVS L1)."
+}
