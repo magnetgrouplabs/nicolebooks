@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Parallelism:** Phases 2, 3, and 4 each depend only on Phase 1, so ingestion (Phase 2), the AI parse pipeline (Phase 3), and the QuickBooks sandbox connection (Phase 4) have no hard ordering dependency on one another. Phase 4 is gated on sandbox credentials, which are available immediately, unlike production credentials.
 
 - [ ] **Phase 1: Foundation** - Two-process app shell, IPC trust boundary, SQLite persistence, OS-keychain secret store, and Magnet Group brand tokens
-- [ ] **Phase 2: Ingestion and Dedupe** - Flat-inbox manual scan, supported formats, processing-date stamping, file-stability checks, and SHA-256 file-hash dedupe
+- [x] **Phase 2: Ingestion and Dedupe** - Flat-inbox manual scan, supported formats, processing-date stamping, file-stability checks, and SHA-256 file-hash dedupe (completed 2026-07-24)
 - [ ] **Phase 3: AI Client and Parse Pipeline** - OpenAI-compatible model config, text extraction plus image prep, vision structuring, deterministic validation with confidence signals
 - [ ] **Phase 4: QuickBooks Connection (Sandbox)** - Guided OAuth, rotated-refresh-token handling, reconnect state, and realm-scoped reference cache (LIVE-CREDENTIALS PAUSE)
 - [ ] **Phase 5: Reconciliation and Matching** - Prefer-existing fuzzy matching for vendors and categories with account-type-filtered candidates
@@ -201,7 +201,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
-| 2. Ingestion and Dedupe | 3/3 | In Progress|  |
+| 2. Ingestion and Dedupe | 3/3 | Complete    | 2026-07-24 |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
