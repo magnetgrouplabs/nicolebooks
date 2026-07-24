@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-07-24T15:01:34.382Z"
-last_activity: 2026-07-24 -- Phase 02 planning complete
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-07-24T15:45:12.013Z"
+last_activity: 2026-07-24
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-22)
 
 **Core value:** Turn a folder of mixed bill documents into correctly categorized, non-duplicate QuickBooks Online entries that a non-technical user can review and approve with confidence, in a fraction of the time manual entry takes.
-**Current focus:** Phase 01 — foundation
+**Current focus:** Phase 02 — ingestion-and-dedupe
 
 ## Current Position
 
-Phase: 01 (foundation) — CODE-VERIFIED, PENDING HUMAN UAT
-Plan: 8 of 8 (01-08 is a cross-OS human-verify gate, deferred and tracked)
+Phase: 02 (ingestion-and-dedupe) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-24 -- Phase 02 planning complete
+Last activity: 2026-07-24
 
 Progress: [█████████░] 88% (7/8 plans complete; 01-08 deferred to UAT)
 
@@ -59,6 +59,7 @@ Progress: [█████████░] 88% (7/8 plans complete; 01-08 deferr
 | Phase 01 P05 | 3min | 2 tasks | 6 files |
 | Phase 01 P06 | 6min | 2 tasks | 9 files |
 | Phase 01 P07 | 14min | 2 tasks | 6 files |
+| Phase 02 P02-01 | 12min | 4 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Foundation: fixed a blocking preload-bundling bug (electron resolved to node_modules/electron/index.js requiring child_process) by externalizing electron in the preload build, so window.api now loads in the packaged loadFile app; every SC2/SC3/SC4 e2e proof and the shipped product depend on it
 - [Phase ?]: Foundation: Wave 0 e2e surface complete (secret-roundtrip, persistence, ipc-boundary, theme via Playwright _electron with per-test --user-data-dir isolation); ran green on Windows locally, macos-latest CI leg authored but deferred to CI and the 01-08 human checkpoint
 - [Phase ?]: Foundation: cross-OS CI matrix (windows-latest plus macos-latest, fail-fast false) with a distinct electron-rebuild step and no embedded token/secret; PLAT-01 automatable half done, real-machine half is 01-08
+- [Phase 02]: Ingestion: posted_file_hashes ledger is Design B (posted-only); Phase 2 reads it in 02-02, Phase 7 writes it. No Phase 2 code path inserts (verified: no INSERT INTO posted_file_hashes in src/).
+- [Phase 02]: Ingestion: scan runs entirely main-side behind a new sender-gated ingestion IPC group; scan takes no renderer payload (ScanRequestSchema strict-empty) so the server-side inbox path is the path-injection guard (T-02-02).
 
 ### Pending Todos
 
@@ -109,6 +112,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-23T18:50:25.984Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-ingestion-and-dedupe/02-CONTEXT.md
+Last session: 2026-07-24T15:45:11.900Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

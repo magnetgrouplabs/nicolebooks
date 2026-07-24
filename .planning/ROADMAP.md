@@ -86,7 +86,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — End-to-end scan slice: loads supported files, stamps the processing date, surfaces unsupported files; establishes the ingestion IPC group + dedupe-ledger migration
+- [x] 02-01-PLAN.md — End-to-end scan slice: loads supported files, stamps the processing date, surfaces unsupported files; establishes the ingestion IPC group + dedupe-ledger migration
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -201,7 +201,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
-| 2. Ingestion and Dedupe | 0/3 | Planned | - |
+| 2. Ingestion and Dedupe | 1/3 | In Progress|  |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
