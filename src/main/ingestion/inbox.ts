@@ -13,7 +13,7 @@
 
 import type Database from 'better-sqlite3'
 import { app } from 'electron'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDatabase } from '../db/connection'
 
@@ -37,16 +37,20 @@ export function persistInboxPath(inboxPath: string, deps: InboxDeps = {}): void 
 }
 
 /**
- * Resolve the inbox path. If app_settings already holds one, return it with created:false.
- * Otherwise compute Documents/NicoleBooks/Inbox, create it recursively, persist it, and
- * return it with created:true.
+ * Resolve the inbox path. If app_settings already holds one AND that folder still exists on disk,
+ * return it with created:false. Otherwise (no path configured yet, OR the persisted path was
+ * moved / renamed / deleted / lives on an unmounted volume) fall back to (re)creating the default
+ * Documents/NicoleBooks/Inbox, persist it, and return it with created:true.
  */
 export function resolveInboxPath(deps: InboxDeps = {}): { path: string; created: boolean } {
   const db = deps.db ?? getDatabase()
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(INBOX_KEY) as
     | { value: string }
     | undefined
-  if (row?.value) {
+  // WR-03: existence-check the persisted path before trusting it. A stale path (folder gone,
+  // renamed, or on an unmounted drive) must not be returned as-is, or every downstream consumer
+  // (runScan's readdir, the Bills/Settings display) inherits a path that cannot resolve.
+  if (row?.value && existsSync(row.value)) {
     return { path: row.value, created: false }
   }
 

@@ -14,7 +14,7 @@
 //     second call returns { created: false } with the same path.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -49,11 +49,29 @@ function readInboxSetting(): string | undefined {
 describe('persistInboxPath / resolveInboxPath', () => {
   it('round-trips a chosen path through app_settings inbox_path', () => {
     const chosen = join(dir, 'custom', 'MyInbox')
+    // The folder must exist on disk: resolveInboxPath now existence-checks the persisted path
+    // (WR-03) before returning it, so a round-trip proof needs a real directory.
+    mkdirSync(chosen, { recursive: true })
     persistInboxPath(chosen, { db })
     expect(readInboxSetting()).toBe(chosen)
 
     const resolved = resolveInboxPath({ db, documentsDir: docsDir })
     expect(resolved).toEqual({ path: chosen, created: false })
+  })
+
+  it('recreates the default when the persisted inbox path no longer exists (WR-03)', () => {
+    // A path that was persisted but has since been moved/deleted (never created on disk here).
+    const missing = join(dir, 'gone', 'MovedInbox')
+    persistInboxPath(missing, { db })
+    expect(existsSync(missing)).toBe(false)
+
+    const expected = join(docsDir, 'NicoleBooks', 'Inbox')
+    const resolved = resolveInboxPath({ db, documentsDir: docsDir })
+
+    // The stale path is not trusted: the default is (re)created, persisted, and returned.
+    expect(resolved).toEqual({ path: expected, created: true })
+    expect(existsSync(expected)).toBe(true)
+    expect(readInboxSetting()).toBe(expected)
   })
 
   it('creates and persists the default inbox when inbox_path is unset', () => {
