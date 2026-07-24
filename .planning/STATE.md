@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-07-24T15:45:12.013Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-07-24T15:54:43.000Z"
 last_activity: 2026-07-24
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 02 (ingestion-and-dedupe) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-24
 
-Progress: [█████████░] 88% (7/8 plans complete; 01-08 deferred to UAT)
+Progress: [██████████] 90% (9/10 plans complete; 01-08 deferred to UAT, 02-03 next)
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [█████████░] 88% (7/8 plans complete; 01-08 deferr
 | Phase 01 P06 | 6min | 2 tasks | 9 files |
 | Phase 01 P07 | 14min | 2 tasks | 6 files |
 | Phase 02 P02-01 | 12min | 4 tasks | 21 files |
+| Phase 02 P02-02 | 4min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Foundation: cross-OS CI matrix (windows-latest plus macos-latest, fail-fast false) with a distinct electron-rebuild step and no embedded token/secret; PLAT-01 automatable half done, real-machine half is 01-08
 - [Phase 02]: Ingestion: posted_file_hashes ledger is Design B (posted-only); Phase 2 reads it in 02-02, Phase 7 writes it. No Phase 2 code path inserts (verified: no INSERT INTO posted_file_hashes in src/).
 - [Phase 02]: Ingestion: scan runs entirely main-side behind a new sender-gated ingestion IPC group; scan takes no renderer payload (ScanRequestSchema strict-empty) so the server-side inbox path is the path-injection guard (T-02-02).
+- [Phase 02]: Dedupe (02-02): read-only ledger.checkPostedHash (prepared SELECT WHERE hash = ?, bound never interpolated) confirms Design B holds — posted_file_hashes in src/ only as the migration CREATE and the ledger SELECT, zero writes (T-02-06/T-02-07). ING-04 complete.
+- [Phase 02]: Dedupe (02-02): scan groups the batch by hash after computing all hashes (Pitfall 5); a ledger hit marks EVERY entry with that hash duplicate-excluded (precedence over within-scan duplicate-in-batch); Bills-screen include-anyway override is renderer-only local state (no IPC write, Phase 2 ends at loaded-for-processing).
 
 ### Pending Todos
 
@@ -112,6 +115,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-24T15:45:11.900Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-07-24T15:54:43.000Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
