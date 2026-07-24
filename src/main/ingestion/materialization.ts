@@ -76,7 +76,16 @@ export async function isNotMaterialized(
 ): Promise<boolean> {
   if (platform === 'darwin') {
     const statFn = deps.stat ?? stat
-    const st = await statFn(fullPath)
+    // Load-on-failure, mirroring the win32 branch (WR-01): a stat that throws (file removed
+    // between readdir and the gate, permission error) is INCONCLUSIVE, not positive placeholder
+    // evidence, so treat it as materialized and let the settling/hash gates (and the scan-level
+    // per-file try/catch) handle a genuinely-vanished file. Skip only on positive evidence.
+    let st: StatMeta
+    try {
+      st = await statFn(fullPath)
+    } catch {
+      return false
+    }
     // APFS dataless file: full logical size, zero allocated extents.
     if (Number(st.size) > 0 && Number(st.blocks) === 0) return true
     // Legacy pre-Sonoma iCloud stub: a sibling ".<name>.icloud" placeholder exists.

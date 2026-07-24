@@ -88,24 +88,33 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
 
     const fullPath = join(inboxPath, name)
 
-    // SLICE 3 (02-03): the materialization gate runs BEFORE any byte read (metadata-first,
-    // bytes-last). 1) placeholder check (stat/attribute only): an online-only cloud placeholder
-    // is skipped without opening its bytes, so it is never force-downloaded. 2) settling poll: a
-    // still-writing file is skipped so it is never hashed half-complete. Either failing gate ->
-    // not-ready-skipped, surfaced for re-scan, and CONTINUE without hashing.
-    if (await notMaterialized(fullPath, siblingNames, name)) {
-      files.push({ filename: name, status: 'not-ready-skipped' })
-      continue
-    }
-    if (!(await settled(fullPath))) {
-      files.push({ filename: name, status: 'not-ready-skipped' })
-      continue
-    }
+    // Per-file error isolation (WR-01): a single transient fs fault on ONE entry (a file removed
+    // mid-scan by cloud sync, a permission error, a lock) must never abort the whole batch and
+    // discard every already-classified file. Any throw from the gates, the stat, or the hash is
+    // caught here and recorded as not-ready-skipped — a benign, recoverable state that is
+    // surfaced for re-scan rather than silently dropped (D-11's spirit).
+    try {
+      // SLICE 3 (02-03): the materialization gate runs BEFORE any byte read (metadata-first,
+      // bytes-last). 1) placeholder check (stat/attribute only): an online-only cloud placeholder
+      // is skipped without opening its bytes, so it is never force-downloaded. 2) settling poll: a
+      // still-writing file is skipped so it is never hashed half-complete. Either failing gate ->
+      // not-ready-skipped, surfaced for re-scan, and CONTINUE without hashing.
+      if (await notMaterialized(fullPath, siblingNames, name)) {
+        files.push({ filename: name, status: 'not-ready-skipped' })
+        continue
+      }
+      if (!(await settled(fullPath))) {
+        files.push({ filename: name, status: 'not-ready-skipped' })
+        continue
+      }
 
-    // Now safe: the file is local and settled. Only here do we read its bytes (bytes-last).
-    const st = await stat(fullPath)
-    const hash = await hashFile(fullPath)
-    files.push({ filename: name, status: 'loaded', hash, sizeBytes: Number(st.size) })
+      // Now safe: the file is local and settled. Only here do we read its bytes (bytes-last).
+      const st = await stat(fullPath)
+      const hash = await hashFile(fullPath)
+      files.push({ filename: name, status: 'loaded', hash, sizeBytes: Number(st.size) })
+    } catch {
+      files.push({ filename: name, status: 'not-ready-skipped' })
+    }
   }
 
   // SLICE 2 (02-02): within-scan collapse (D-10) then the posted-ledger dedupe check (D-08/09).
