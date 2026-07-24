@@ -24,6 +24,16 @@ import Database from 'better-sqlite3'
 import { migrate } from '../src/main/db/migrate'
 import { runScan } from '../src/main/ingestion/scan'
 import { localDateStamp } from '../src/main/ingestion/filetype'
+import { sha256File } from '../src/main/ingestion/hash'
+
+// Deterministic materialization injection for the tests that are NOT exercising the gate:
+// every file is treated as local + settled, so the scan never spawns an OS attribute read or
+// waits on the ~750ms production settling poll. The not-ready case at the bottom overrides
+// isNotMaterialized for a single file to prove the bytes-last skip.
+const materialized = {
+  isNotMaterialized: async (): Promise<boolean> => false,
+  isSettled: async (): Promise<boolean> => true
+}
 
 /** Compute the SHA-256 the scan will produce for these exact bytes (test-side, independent). */
 function sha256(bytes: Buffer): string {
@@ -77,7 +87,7 @@ function snapshot(path: string): Record<string, number> {
 
 describe('runScan (walking-path slice)', () => {
   it('loads supported files, skips unsupported, ignores junk, and stamps today', async () => {
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
 
     const byName = new Map(result.files.map((f) => [f.filename, f]))
 
@@ -110,7 +120,7 @@ describe('runScan (walking-path slice)', () => {
 
   it('is strictly read-only on the inbox (D-04): names and mtimes unchanged', async () => {
     const before = snapshot(inbox)
-    await runScan({ inboxPath: inbox, db })
+    await runScan({ inboxPath: inbox, db, ...materialized })
     const after = snapshot(inbox)
     expect(after).toEqual(before)
   })
@@ -126,7 +136,7 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
     writeFileSync(join(inbox, 'copy-a.pdf'), bytes)
     writeFileSync(join(inbox, 'copy-b.pdf'), bytes)
 
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
     const a = result.files.find((f) => f.filename === 'copy-a.pdf')
     const b = result.files.find((f) => f.filename === 'copy-b.pdf')
 
@@ -143,7 +153,7 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
     const postedAt = '2026-07-18T09:30:00.000Z'
     insertPosted(db, sha256(bytes), postedAt, 'already-posted.pdf')
 
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
     const file = result.files.find((f) => f.filename === 'already-posted.pdf')
     expect(file?.status).toBe('duplicate-excluded')
     expect(file?.postedAt).toBe(postedAt)
@@ -155,7 +165,7 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
     writeFileSync(join(inbox, 'dup-2.pdf'), bytes)
     insertPosted(db, sha256(bytes), '2026-07-10T00:00:00.000Z', 'dup-original.pdf')
 
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
     const dup1 = result.files.find((f) => f.filename === 'dup-1.pdf')
     const dup2 = result.files.find((f) => f.filename === 'dup-2.pdf')
 
@@ -168,7 +178,7 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
 
   it('reloads a supported file whose hash is not in the ledger (Design B pending reload)', async () => {
     // invoice.pdf from the base fixture has no ledger row, so it must still load.
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
     const invoice = result.files.find((f) => f.filename === 'invoice.pdf')
     expect(invoice?.status).toBe('loaded')
   })
@@ -184,10 +194,56 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
     writeFileSync(join(inbox, 'posted.pdf'), postedBytes)
     insertPosted(db, sha256(postedBytes), '2026-07-01T00:00:00.000Z', 'posted.pdf')
 
-    const result = await runScan({ inboxPath: inbox, db })
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
     const dupExcluded = result.files.filter((f) => f.status === 'duplicate-excluded').length
     const dupInBatch = result.files.filter((f) => f.status === 'duplicate-in-batch').length
     expect(result.summary.duplicates).toBe(dupExcluded + dupInBatch)
     expect(result.summary.duplicates).toBe(2)
+  })
+})
+
+// Slice 3 (02-03) materialization gate: a file the gate reports "not materialized" must come back
+// 'not-ready-skipped', is NEVER hashed (metadata-first, bytes-last), and is surfaced for re-scan;
+// a real local file in the same inbox still loads. The gate is injected so the assertion is
+// deterministic and does not depend on the host OS or a real cloud provider.
+describe('runScan materialization gate (02-03)', () => {
+  it('flags a not-materialized file not-ready-skipped, never hashes it, and still loads real files', async () => {
+    writeFileSync(join(inbox, 'placeholder.pdf'), Buffer.from('%PDF-1.7 would-be online-only placeholder'))
+    writeFileSync(join(inbox, 'local.pdf'), Buffer.from('%PDF-1.7 real local bill'))
+
+    // Spy hasher: records every file whose BYTES are read, then delegates to the real hash so
+    // genuinely-loaded files still return a valid 64-char digest.
+    const hashed: string[] = []
+    const hashSpy = async (fullPath: string): Promise<string> => {
+      hashed.push(fullPath)
+      return sha256File(fullPath)
+    }
+
+    const result = await runScan({
+      inboxPath: inbox,
+      db,
+      // Only placeholder.pdf is "not materialized"; everything else is local.
+      isNotMaterialized: async (_full, _siblings, fileName: string): Promise<boolean> =>
+        fileName === 'placeholder.pdf',
+      isSettled: async (): Promise<boolean> => true,
+      sha256File: hashSpy
+    })
+
+    const placeholder = result.files.find((f) => f.filename === 'placeholder.pdf')
+    const local = result.files.find((f) => f.filename === 'local.pdf')
+
+    // The placeholder is skipped as not-ready and carries no hash.
+    expect(placeholder?.status).toBe('not-ready-skipped')
+    expect(placeholder?.hash).toBeUndefined()
+    // A real local file in the same inbox still loads with a real hash.
+    expect(local?.status).toBe('loaded')
+    expect(local?.hash).toMatch(/^[0-9a-f]{64}$/)
+
+    // Bytes-last proof: the not-ready file's bytes were NEVER read; the local file's were.
+    expect(hashed.some((p) => p.endsWith('placeholder.pdf'))).toBe(false)
+    expect(hashed.some((p) => p.endsWith('local.pdf'))).toBe(true)
+
+    // Surfaced for re-scan, never silently dropped.
+    expect(result.summary.notReady).toBe(1)
   })
 })
