@@ -304,7 +304,7 @@ export interface ParseDeps {
 
 **Recommendation:** **Option B** with these starting numbers, all tunable: `bitmapCoverage >= 0.75` -> image-only; `invisibleGlyphRatio > 0.90` -> image-only; native requires `chars >= 50/page` AND an embedded font; PDF is native if `>= 50%` of pages are native. Char count is a **soft** tiebreaker only, never the sole gate (matches D-08).
 
-**Anthony picks:** ________________________  (default if unspecified: Option B)
+**Anthony picks:** ✅ **Option B (Docling-style layered gate)** — locked as D-20 in CONTEXT.md (2026-07-24).
 
 ---
 
@@ -320,7 +320,7 @@ Problem: totals are often on the last page and line items span pages, but Phase 
 
 **Recommendation:** **Option A.** For this app (one bill/file, low volume, accuracy-first, cost-irrelevant), a single multi-image call is both simplest and most accurate. Deterministic reconciliation stays the Zod arithmetic check (subtotal+tax=total), not page-merging. Set the cap at **10 pages**; over the cap, send pages 1..3 + last 2 and set a `truncated` flag that Phase 6 surfaces.
 
-**Anthony picks:** ________________________  (default: Option A, cap 10)
+**Anthony picks:** ✅ **Option A (single multi-image call, cap 10)** — locked as D-21 in CONTEXT.md (2026-07-24).
 
 ---
 
@@ -336,7 +336,7 @@ Where there is no embedded text (photos, scanned/image-only PDFs), the D-11 grou
 
 **Recommendation:** **Option B, scoped to image-only docs**, because native PDFs already have verbatim-text grounding and do not need it. Use temperature 0 for both calls (determinism preferred over diversity for extraction) and treat a numeric mismatch as an automatic low-confidence flag (flag-and-keep, D-12). Keep it behind a config flag so it can be disabled if latency ever matters.
 
-**Anthony picks:** ________________________  (default: Option B, image-only docs, both calls temp 0)
+**Anthony picks:** ✅ **Option B (second-pass agreement, image-only docs only, both calls temp 0)** — locked as D-22 in CONTEXT.md (2026-07-24).
 
 ---
 
@@ -368,7 +368,7 @@ Report dates exactly as printed; do not reformat or infer a year that is not sho
 
 **Recommendation:** Adopt the structure above verbatim as the starting prompt; keep it in one `parse/prompt.ts` constant so it is diffable and testable. (This is a concrete recommendation, not a lock — Anthony can adjust wording.)
 
-**Anthony picks / edits:** ________________________
+**Anthony picks / edits:** ✅ **Adopt the recommended prompt verbatim** as the starting prompt (one `src/main/parse/prompt.ts` constant; wording tunable) — locked as D-23 in CONTEXT.md (2026-07-24).
 
 ---
 
@@ -415,7 +415,7 @@ CREATE TABLE IF NOT EXISTS parsed_results (
 ```
 Notes: no secret material ever lands here (D-05/D-12) — `base_url_host` is host-only, never the key. `schema_version` lets a future prompt/schema bump invalidate stale rows deliberately (vs D-14's rule that a *model* switch alone does not).
 
-**Anthony picks:** confidence storage ____ (default 5a-A JSON blob) · raw response ____ (default 5b-A store it)
+**Anthony picks:** ✅ confidence storage **5a-A (JSON blob column)** · raw response **5b-A (store `raw_response`)** — locked as D-24 in CONTEXT.md (2026-07-24).
 
 ---
 
@@ -456,7 +456,7 @@ then flag-and-keep the file as a parse failure (D-15) if still invalid.
 - SDK default: `maxRetries: 2`, exponential backoff, retries 408/409/429/>=500 + connection errors; default request `timeout: 600000` (10 min). [CITED: openai-node README]
 - **Recommended:** `new OpenAI({ apiKey, baseURL, maxRetries: 3, timeout: 120000 })` (120s per call is ample for a single bill; 10 min is too long for a UI that shows "parsing N/M"). The SDK's transient-error retry sits INSIDE the D-15 per-file isolation, so a file that still fails after retries becomes a "needs attention / retry" row without aborting the batch.
 
-**Anthony picks:** maxRetries ____ (default 3) · per-call timeout ____ (default 120s) · fallback ladder ____ (default as above)
+**Anthony picks:** ✅ maxRetries **3** · per-call timeout **120s** · fallback ladder **as above** (+ separate `parse:parse-batch` channel and `parse:progress` broadcast per OQ2/OQ3) — locked as D-25/D-26 in CONTEXT.md (2026-07-24).
 
 ---
 
