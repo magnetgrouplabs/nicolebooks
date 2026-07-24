@@ -17,12 +17,30 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, readdirSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { migrate } from '../src/main/db/migrate'
 import { runScan } from '../src/main/ingestion/scan'
 import { localDateStamp } from '../src/main/ingestion/filetype'
+
+/** Compute the SHA-256 the scan will produce for these exact bytes (test-side, independent). */
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+/** Insert a posted-ledger row directly (simulates a Phase-7 post; Phase 2 never writes this). */
+function insertPosted(
+  handle: Database.Database,
+  hash: string,
+  postedAt: string,
+  originalFilename: string
+): void {
+  handle
+    .prepare('INSERT INTO posted_file_hashes (hash, posted_at, original_filename) VALUES (?, ?, ?)')
+    .run(hash, postedAt, originalFilename)
+}
 
 let dir: string
 let inbox: string
@@ -95,5 +113,81 @@ describe('runScan (walking-path slice)', () => {
     await runScan({ inboxPath: inbox, db })
     const after = snapshot(inbox)
     expect(after).toEqual(before)
+  })
+})
+
+// Slice 2 (02-02) dedupe cases: within-scan collapse (D-10) + posted-ledger check (D-08/09).
+// The base fixture from the top-level beforeEach (invoice.pdf, receipt.png unique; contract.docx
+// unsupported; .DS_Store junk; an empty migrated ledger) is extended per-test with the exact
+// fixtures each case needs. Each test gets a fresh temp inbox + temp DB from that beforeEach.
+describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
+  it('collapses byte-identical copies within one scan (D-10): one loaded, one duplicate-in-batch', async () => {
+    const bytes = Buffer.from('%PDF-1.7 identical duplicate bill bytes')
+    writeFileSync(join(inbox, 'copy-a.pdf'), bytes)
+    writeFileSync(join(inbox, 'copy-b.pdf'), bytes)
+
+    const result = await runScan({ inboxPath: inbox, db })
+    const a = result.files.find((f) => f.filename === 'copy-a.pdf')
+    const b = result.files.find((f) => f.filename === 'copy-b.pdf')
+
+    // Exactly one of the identical pair loads; the other collapses to duplicate-in-batch.
+    expect([a?.status, b?.status].sort()).toEqual(['duplicate-in-batch', 'loaded'])
+    // Both carry the same (real) hash.
+    expect(a?.hash).toBe(b?.hash)
+    expect(a?.hash).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('excludes a file whose exact hash is already posted (D-08/09), with postedAt set', async () => {
+    const bytes = Buffer.from('%PDF-1.7 already posted to quickbooks')
+    writeFileSync(join(inbox, 'already-posted.pdf'), bytes)
+    const postedAt = '2026-07-18T09:30:00.000Z'
+    insertPosted(db, sha256(bytes), postedAt, 'already-posted.pdf')
+
+    const result = await runScan({ inboxPath: inbox, db })
+    const file = result.files.find((f) => f.filename === 'already-posted.pdf')
+    expect(file?.status).toBe('duplicate-excluded')
+    expect(file?.postedAt).toBe(postedAt)
+  })
+
+  it('duplicate-excluded outranks duplicate-in-batch when a hash is both posted and duplicated', async () => {
+    const bytes = Buffer.from('%PDF-1.7 posted and also duplicated in this scan')
+    writeFileSync(join(inbox, 'dup-1.pdf'), bytes)
+    writeFileSync(join(inbox, 'dup-2.pdf'), bytes)
+    insertPosted(db, sha256(bytes), '2026-07-10T00:00:00.000Z', 'dup-original.pdf')
+
+    const result = await runScan({ inboxPath: inbox, db })
+    const dup1 = result.files.find((f) => f.filename === 'dup-1.pdf')
+    const dup2 = result.files.find((f) => f.filename === 'dup-2.pdf')
+
+    // Precedence: BOTH copies are duplicate-excluded (already-posted outranks in-batch); a
+    // posted file never comes back loaded.
+    expect(dup1?.status).toBe('duplicate-excluded')
+    expect(dup2?.status).toBe('duplicate-excluded')
+    expect(dup1?.postedAt).toBe('2026-07-10T00:00:00.000Z')
+  })
+
+  it('reloads a supported file whose hash is not in the ledger (Design B pending reload)', async () => {
+    // invoice.pdf from the base fixture has no ledger row, so it must still load.
+    const result = await runScan({ inboxPath: inbox, db })
+    const invoice = result.files.find((f) => f.filename === 'invoice.pdf')
+    expect(invoice?.status).toBe('loaded')
+  })
+
+  it('summary.duplicates counts duplicate-excluded + duplicate-in-batch', async () => {
+    // One within-scan pair (yields 1 duplicate-in-batch) plus one already-posted file (yields
+    // 1 duplicate-excluded).
+    const dupBytes = Buffer.from('%PDF-1.7 within scan dup')
+    writeFileSync(join(inbox, 'dup-a.pdf'), dupBytes)
+    writeFileSync(join(inbox, 'dup-b.pdf'), dupBytes)
+
+    const postedBytes = Buffer.from('%PDF-1.7 posted already')
+    writeFileSync(join(inbox, 'posted.pdf'), postedBytes)
+    insertPosted(db, sha256(postedBytes), '2026-07-01T00:00:00.000Z', 'posted.pdf')
+
+    const result = await runScan({ inboxPath: inbox, db })
+    const dupExcluded = result.files.filter((f) => f.status === 'duplicate-excluded').length
+    const dupInBatch = result.files.filter((f) => f.status === 'duplicate-in-batch').length
+    expect(result.summary.duplicates).toBe(dupExcluded + dupInBatch)
+    expect(result.summary.duplicates).toBe(2)
   })
 })
