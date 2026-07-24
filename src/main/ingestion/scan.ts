@@ -21,7 +21,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ScanFile, ScanResult } from '../../shared/ipc-contract'
 import { getDatabase } from '../db/connection'
-import { isJunk, isSupported, localDateStamp } from './filetype'
+import { iCloudSentinelTarget, isJunk, isSupported, localDateStamp } from './filetype'
 import { sha256File } from './hash'
 import { resolveInboxPath } from './inbox'
 import { checkPostedHash } from './ledger'
@@ -76,6 +76,20 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
     // Never follow symlinks out of the inbox, and skip anything that is not a regular file
     // (directories, sockets, etc.) — Security Domain, threat T-02-05.
     if (entry.isSymbolicLink() || !entry.isFile()) continue
+
+    // Legacy pre-Sonoma iCloud eviction (WR-02, D-12): a `.<name>.icloud` sentinel REPLACES the
+    // real <name> entry on disk. Translate it back to <name> and surface it not-ready-skipped
+    // (re-scannable) BEFORE the junk/support checks, so it is never mislabeled unsupported by its
+    // `.icloud` extension. If the real <name> is ALSO present (modern mixed state) skip the
+    // sentinel: that entry is classified on its own and its materialization gate already catches
+    // the sibling, so emitting a sentinel row here would only duplicate it.
+    const sentinelTarget = iCloudSentinelTarget(name)
+    if (sentinelTarget !== null) {
+      if (!siblingNames.has(sentinelTarget)) {
+        files.push({ filename: sentinelTarget, status: 'not-ready-skipped' })
+      }
+      continue
+    }
 
     // OS/system junk is silently dropped and never appears in the results (D-13).
     if (isJunk(name)) continue

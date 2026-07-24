@@ -202,6 +202,37 @@ describe('runScan dedupe (within-scan collapse + posted ledger)', () => {
   })
 })
 
+// WR-02 legacy iCloud sentinel wiring: a `.<name>.icloud` placeholder must be translated back to
+// its real target and surfaced not-ready-skipped (re-scannable), never mislabeled unsupported by
+// its `.icloud` extension. When the real file is also present, the sentinel must not add a dup row.
+describe('runScan legacy iCloud sentinel wiring (WR-02)', () => {
+  it('surfaces a lone .<name>.icloud sentinel as not-ready-skipped keyed to the real file', async () => {
+    // Legacy eviction model: the real bill.pdf is REPLACED by its sentinel, so only it exists.
+    writeFileSync(join(inbox, '.evicted-bill.pdf.icloud'), Buffer.from('icloud placeholder stub'))
+
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
+    const target = result.files.find((f) => f.filename === 'evicted-bill.pdf')
+
+    // Translated back to the real file and surfaced not-ready, never unsupported; the sentinel
+    // name itself never appears as its own row.
+    expect(target?.status).toBe('not-ready-skipped')
+    expect(result.files.some((f) => f.filename === '.evicted-bill.pdf.icloud')).toBe(false)
+    expect(result.files.some((f) => f.filename.endsWith('.icloud'))).toBe(false)
+  })
+
+  it('does not emit a duplicate row when both the real file and its sentinel are present', async () => {
+    writeFileSync(join(inbox, 'mixed.pdf'), Buffer.from('%PDF-1.7 real local bill still present'))
+    writeFileSync(join(inbox, '.mixed.pdf.icloud'), Buffer.from('icloud placeholder stub'))
+
+    const result = await runScan({ inboxPath: inbox, db, ...materialized })
+    const rows = result.files.filter((f) => f.filename === 'mixed.pdf')
+
+    // Exactly one row for the real file (the sentinel de-dupes against it); no sentinel row.
+    expect(rows).toHaveLength(1)
+    expect(result.files.some((f) => f.filename === '.mixed.pdf.icloud')).toBe(false)
+  })
+})
+
 // Slice 3 (02-03) materialization gate: a file the gate reports "not materialized" must come back
 // 'not-ready-skipped', is NEVER hashed (metadata-first, bytes-last), and is surfaced for re-scan;
 // a real local file in the same inbox still loads. The gate is injected so the assertion is
