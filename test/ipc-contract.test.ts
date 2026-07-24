@@ -120,7 +120,11 @@ describe('Channels are stable strings', () => {
       secretsGet: 'secrets:get',
       secretsDelete: 'secrets:delete',
       themeGet: 'theme:get',
-      themeChanged: 'theme:changed'
+      themeChanged: 'theme:changed',
+      // Phase 2 ingestion channel group (plan 02-01).
+      ingestionResolveInbox: 'ingestion:resolve-inbox',
+      ingestionChooseInbox: 'ingestion:choose-inbox',
+      ingestionScan: 'ingestion:scan'
     })
   })
 })

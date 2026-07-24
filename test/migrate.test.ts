@@ -4,13 +4,18 @@
 // threat T-01-06). Runs against a real better-sqlite3 handle opened on a temp file (not
 // :memory:) so the persistence-across-reopen behavior is genuinely exercised.
 //
-// Four behaviors, one per requirement of the plan:
-//   1. a fresh database reports user_version 0, and after migrate() it reports 1
+// Behaviors covered:
+//   1. a fresh database reports user_version 0, and after migrate() it reports 2 (both
+//      migration0001 and the Phase 2 migration0002 apply)
 //   2. after migrate() the app_settings table exists with columns key and value
 //   3. running migrate() a second time is a no-op and does not throw (idempotent)
-//   4. a value written to app_settings survives closing and reopening the same file
+//   4. the table set is exactly ['app_settings', 'posted_file_hashes'] — per D-15 each
+//      feature table is added by its owning phase's migration; Phase 2 owns the dedupe
+//      ledger posted_file_hashes (migration0002)
+//   5. posted_file_hashes exposes the dedupe-ledger columns
+//   6. a value written to app_settings survives closing and reopening the same file
 //
-// The runner and migration are pure (no electron import), so this suite imports them
+// The runner and migrations are pure (no electron import), so this suite imports them
 // directly and never touches app.getPath.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -38,11 +43,12 @@ function columnNames(db: Database.Database, table: string): string[] {
 }
 
 describe('migrate()', () => {
-  it('advances user_version from 0 to 1 on a fresh database', () => {
+  it('advances user_version from 0 to 2 on a fresh database', () => {
     const db = new Database(dbPath)
     expect(db.pragma('user_version', { simple: true })).toBe(0)
     migrate(db)
-    expect(db.pragma('user_version', { simple: true })).toBe(1)
+    // migration0001 (app_settings) + migration0002 (posted_file_hashes) both apply.
+    expect(db.pragma('user_version', { simple: true })).toBe(2)
     db.close()
   })
 
@@ -59,17 +65,28 @@ describe('migrate()', () => {
     const db = new Database(dbPath)
     migrate(db)
     expect(() => migrate(db)).not.toThrow()
-    expect(db.pragma('user_version', { simple: true })).toBe(1)
+    expect(db.pragma('user_version', { simple: true })).toBe(2)
     db.close()
   })
 
-  it('creates no feature tables beyond app_settings (decision D-15)', () => {
+  it('creates exactly the owning-phase feature tables (D-15): app_settings + posted_file_hashes', () => {
+    // D-15: each feature table is added by its owning phase's migration. Phase 1 owns
+    // app_settings (migration0001); Phase 2 owns the dedupe ledger posted_file_hashes
+    // (migration0002). Order is by creation (migration version order).
     const db = new Database(dbPath)
     migrate(db)
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
       .all() as Array<{ name: string }>
-    expect(tables.map((t) => t.name)).toEqual(['app_settings'])
+    expect(tables.map((t) => t.name)).toEqual(['app_settings', 'posted_file_hashes'])
+    db.close()
+  })
+
+  it('creates posted_file_hashes with the dedupe-ledger columns (migration0002)', () => {
+    const db = new Database(dbPath)
+    migrate(db)
+    const cols = columnNames(db, 'posted_file_hashes')
+    expect(cols).toEqual(['hash', 'posted_at', 'original_filename', 'qbo_entity', 'qbo_id'])
     db.close()
   })
 
