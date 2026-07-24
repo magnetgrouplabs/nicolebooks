@@ -31,7 +31,9 @@ This phase is a disciplined re-application of Phase 1 seams. Almost every new fi
 | `src/preload/index.ts` (modified) | bridge | — | itself (add `ingestion` object) | exact |
 | `src/renderer/src/env.d.ts` (unchanged, verify) | type augmentation | — | already derives from preload `Api`; no edit needed | n/a |
 | `src/renderer/src/screens/BillsScreen.tsx` (modified) | component | request-response | `src/renderer/src/components/HealthIndicator.tsx` (window.api + useState) | exact (pattern) |
+| `src/renderer/src/screens/SettingsScreen.tsx` (modified, 02-01 Task 4) | component | request-response | `src/renderer/src/components/HealthIndicator.tsx` (window.api + useState) + `ui/button` | exact (pattern) |
 | `e2e/ipc-boundary.spec.ts` (modified) | test (e2e) | — | itself (extend apiShape assertions) | exact |
+| `e2e/inbox-picker.spec.ts` (new, 02-01 Task 4) | test (e2e) | — | `e2e/secret-roundtrip.spec.ts` (`app.evaluate` main-process stub) | exact (pattern) |
 
 ---
 

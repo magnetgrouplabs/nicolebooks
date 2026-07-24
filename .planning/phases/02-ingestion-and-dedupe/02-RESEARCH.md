@@ -545,17 +545,17 @@ export function localDateStamp(d = new Date()): string {
 
 **All A1/A2 items are empirically resolvable in Wave 0** and should be, before the detection thresholds are locked.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Inconclusive-detection fallback direction (skip vs load).**
+1. **Inconclusive-detection fallback direction (skip vs load).** RESOLVED: closed by plan 02-03 (load-on-inconclusive fallback in the materialization slice).
    - What we know: skipping is always surfaced and re-scannable (safe); loading a placeholder would download it (mildly violates "don't force-download" but not catastrophic).
    - What's unclear: which failure mode Nicole should experience when detection can't decide.
    - Recommendation: default to LOAD on total detection failure (never false-skip a real bill), skip only on positive placeholder evidence; confirm with Anthony. Documented in Section 1.4.
 
-2. **Design A vs B for the ledger (first-seen provenance vs strict read/write split).**
+2. **Design A vs B for the ledger (first-seen provenance vs strict read/write split).** RESOLVED: closed by plans 02-01/02-02 (Design B: Phase 2 read-only ledger, Phase 7 owns the write).
    - See Section 3 + Assumption A3. Recommend B; trivially switchable. A discuss-phase or plan-checker confirmation would close it.
 
-3. **Optional magic-byte confirmation during hashing.**
+3. **Optional magic-byte confirmation during hashing.** RESOLVED: deferred per recommendation (extension check suffices for MVP; magic-byte hook left in hash.ts).
    - What we know: it can catch a mislabeled/renamed file (e.g. a `.pdf` that is really a `.docx`) using bytes already streaming through the hash.
    - What's unclear: whether the extra complexity is worth it for a trusted, single-user local inbox in MVP.
    - Recommendation: defer for MVP (extension check suffices); leave a hook in `hash.ts` to inspect the first chunk if wanted later.
