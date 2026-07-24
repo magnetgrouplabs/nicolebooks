@@ -82,7 +82,19 @@ Plans:
   3. The app computes a SHA-256 file hash for each document and skips-and-flags any exact file it has already posted to QuickBooks, excluding it from the batch by default with a one-click override, so re-dropping an already-entered file creates no duplicate work.
   4. The app waits for files to fully materialize before hashing, so cloud-sync placeholder files and partially written files are not processed as if complete.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — End-to-end scan slice: loads supported files, stamps the processing date, surfaces unsupported files; establishes the ingestion IPC group + dedupe-ledger migration
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — Duplicate catch: already-posted files excluded-by-default with a one-click override; within-scan byte-identical copies collapse
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-03-PLAN.md — Not-ready skip: cloud-sync placeholders and partial writes detected by metadata (never downloaded), flagged and surfaced for re-scan
 
 ### Phase 3: AI Client and Parse Pipeline
 
@@ -189,7 +201,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
-| 2. Ingestion and Dedupe | 0/TBD | Not started | - |
+| 2. Ingestion and Dedupe | 0/3 | Planned | - |
 | 3. AI Client and Parse Pipeline | 0/TBD | Not started | - |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
