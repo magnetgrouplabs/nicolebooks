@@ -117,6 +117,7 @@ function ScanRow({
 export function BillsScreen(): React.JSX.Element {
   const [inboxPath, setInboxPath] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
   const [result, setResult] = useState<ScanResult | null>(null)
   // Renderer-only override: which duplicate-excluded files the user chose to include anyway.
   const [includedOverrides, setIncludedOverrides] = useState<Set<string>>(new Set())
@@ -139,11 +140,19 @@ export function BillsScreen(): React.JSX.Element {
 
   async function runScan(): Promise<void> {
     setScanning(true)
+    setScanError(null)
     try {
       const scan = await window.api.ingestion.scan()
       setResult(scan)
       // A fresh scan clears any prior include-anyway overrides (they keyed to the old batch).
       setIncludedOverrides(new Set())
+    } catch {
+      // The scan rejected. The most common trigger is a moved, renamed, or deleted inbox folder
+      // (or one on an offline drive), but any main-side fault lands here. Surface a plain,
+      // recoverable message instead of failing silently, which would only flicker the button.
+      setScanError(
+        'Could not scan your inbox folder. Make sure the folder still exists, then try again.'
+      )
     } finally {
       setScanning(false)
     }
@@ -183,6 +192,15 @@ export function BillsScreen(): React.JSX.Element {
           {scanning ? 'Scanning...' : 'Scan now'}
         </Button>
       </div>
+
+      {scanError && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+        >
+          {scanError}
+        </p>
+      )}
 
       {!result && (
         <EmptyState
