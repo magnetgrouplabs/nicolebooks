@@ -15,9 +15,11 @@ import type Database from 'better-sqlite3'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ScanFile, ScanResult } from '../../shared/ipc-contract'
+import { getDatabase } from '../db/connection'
 import { isJunk, isSupported, localDateStamp } from './filetype'
 import { sha256File } from './hash'
 import { resolveInboxPath } from './inbox'
+import { checkPostedHash } from './ledger'
 
 /** Injectable dependencies so the unit test drives a temp inbox + temp DB without Electron. */
 export interface ScanDeps {
@@ -31,7 +33,10 @@ export interface ScanDeps {
  * per-file statuses, the batch's local processing date, and a one-line summary.
  */
 export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
-  const inboxPath = deps.inboxPath ?? resolveInboxPath({ db: deps.db }).path
+  // Resolve the db handle once (default: main-process singleton) for the ledger dedupe check.
+  // In tests deps.db is always injected, so getDatabase() (which needs Electron) is never hit.
+  const db = deps.db ?? getDatabase()
+  const inboxPath = deps.inboxPath ?? resolveInboxPath({ db }).path
 
   // Flat, non-recursive enumeration (D-01, Pitfall 3): list this one directory, never descend.
   const entries = await readdir(inboxPath, { withFileTypes: true })
@@ -62,16 +67,48 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
     files.push({ filename: name, status: 'loaded', hash, sizeBytes: Number(st.size) })
   }
 
-  // SLICE 2 (02-02): within-scan collapse (group by hash) + posted_file_hashes ledger check
-  // goes here. This slice runs NO ledger check and NO within-scan collapse.
+  // SLICE 2 (02-02): within-scan collapse (D-10) then the posted-ledger dedupe check (D-08/09).
+  // Compute-all-hashes-first (02-RESEARCH Pitfall 5): every supported file above is already
+  // hashed, so the whole batch is in memory before we group — a whole-batch operation, not a
+  // streaming one.
+
+  // Within-scan collapse (D-10): the FIRST entry of each identical-bytes group keeps its
+  // 'loaded' status; every later byte-identical copy becomes 'duplicate-in-batch'. seen also
+  // doubles as the set of distinct hashes for the ledger pass below.
+  const seen = new Set<string>()
+  for (const file of files) {
+    if (file.status !== 'loaded' || !file.hash) continue
+    if (seen.has(file.hash)) {
+      file.status = 'duplicate-in-batch'
+    } else {
+      seen.add(file.hash)
+    }
+  }
+
+  // Posted-ledger dedupe check (D-08/09), READ-ONLY: for each distinct hash, a ledger hit marks
+  // EVERY entry with that hash 'duplicate-excluded' and stamps the posted date. This takes
+  // precedence over 'duplicate-in-batch' when both apply to the same hash. No ledger write.
+  for (const hash of seen) {
+    const posted = checkPostedHash(db, hash)
+    if (!posted) continue
+    for (const file of files) {
+      if (file.hash === hash) {
+        file.status = 'duplicate-excluded'
+        file.postedAt = posted.postedAt
+      }
+    }
+  }
 
   const loaded = files.filter((f) => f.status === 'loaded').length
+  const duplicates = files.filter(
+    (f) => f.status === 'duplicate-excluded' || f.status === 'duplicate-in-batch'
+  ).length
   const unsupported = files.filter((f) => f.status === 'unsupported-skipped').length
 
   return {
     batchEntryDate: localDateStamp(),
     inboxPath,
     files,
-    summary: { total: files.length, loaded, duplicates: 0, notReady: 0, unsupported }
+    summary: { total: files.length, loaded, duplicates, notReady: 0, unsupported }
   }
 }
