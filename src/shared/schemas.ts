@@ -30,3 +30,8 @@ export const SecretSetSchema = z.object({
 
 /** secrets:get and secrets:delete key. Bare string, never empty, bounded length. */
 export const SecretKeySchema = z.string().min(1).max(128)
+
+// ingestion:scan takes NO renderer payload: the inbox path is read server-side from
+// app_settings, which removes any path-injection surface (D-15, threat T-02-02). The strict
+// empty-object schema rejects any payload a caller tries to smuggle in before runScan runs.
+export const ScanRequestSchema = z.object({}).strict()

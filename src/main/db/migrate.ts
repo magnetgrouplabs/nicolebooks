@@ -16,12 +16,14 @@
 
 import type Database from 'better-sqlite3'
 import { migration0001 } from './migrations/0001_init'
+import { migration0002 } from './migrations/0002_dedupe'
 
 export type Migration = { version: number; up: (db: Database.Database) => void }
 
-// The code-controlled migration list. Append 0002, 0003, ... in later phases; never
-// renumber an existing entry (user_version is a forward-only ratchet).
-const migrations: Migration[] = [migration0001]
+// The code-controlled migration list. Append 0003, ... in later phases; never renumber an
+// existing entry (user_version is a forward-only ratchet). 0002 adds the Phase 2 dedupe
+// ledger posted_file_hashes.
+const migrations: Migration[] = [migration0001, migration0002]
 
 export function migrate(db: Database.Database): void {
   const current = db.pragma('user_version', { simple: true }) as number
