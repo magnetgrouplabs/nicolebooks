@@ -11,7 +11,7 @@ Requirements for the initial release. Each maps to a roadmap phase.
 
 - [x] **ING-01**: User can drop bill files (PDF and image) into a single flat inbox folder, and the app loads them on a manual scan and stamps the batch with the processing date as its entry date
 - [x] **ING-02**: User configures the inbox once in Settings (the app creates a sensible default), then triggers a manual "Scan now" to load its supported bill files for processing
-- [ ] **ING-03**: App skips files that are unsupported or not fully materialized (cloud-sync placeholders, partial writes) and surfaces skipped files in a summary rather than silently dropping them
+- [x] **ING-03**: App skips files that are unsupported or not fully materialized (cloud-sync placeholders, partial writes) and surfaces skipped files in a summary rather than silently dropping them
 - [x] **ING-04**: App computes a SHA-256 file hash for each document and skips-and-flags any exact file it has already posted to QuickBooks (excluded by default, with an override)
 - [x] **ING-05**: App accepts common bill formats: text PDFs, scanned or photographed images (JPEG, PNG), and iPhone HEIC photos
 
@@ -134,7 +134,7 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 |-------------|-------|--------|
 | ING-01 | Phase 2 | Complete |
 | ING-02 | Phase 2 | Complete |
-| ING-03 | Phase 2 | Pending |
+| ING-03 | Phase 2 | Complete |
 | ING-04 | Phase 2 | Complete |
 | ING-05 | Phase 2 | Complete |
 | AI-01 | Phase 3 | Pending |
