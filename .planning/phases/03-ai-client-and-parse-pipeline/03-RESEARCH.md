@@ -597,19 +597,21 @@ const migrations: Migration[] = [migration0001, migration0002, migration0003]
 | A7 | 120s per-call timeout + maxRetries 3 suits a single-bill call | Directive 6 | Tunable one-liners |
 | A8 | CLAUDE.md pins (openai 6.48.0 / unpdf 1.6.2) can move to current (6.49.0 / 1.7.0) | Standard Stack | Minor bumps; verify no breaking change at install |
 
-## Open Questions
+## Open Questions (RESOLVED 2026-07-24)
 
-1. **Canvas dependency for image-only PDF rendering (blocks D-07).**
+> All three resolved by Anthony's picks, recorded in 03-CONTEXT.md "Locked Research Picks": OQ1 -> D-19 (add `@napi-rs/canvas@1.0.2`), OQ2 -> D-26 (separate `parse:parse-batch` channel), OQ3 -> D-26 (`parse:progress` broadcast).
+
+1. **Canvas dependency for image-only PDF rendering (blocks D-07).** [RESOLVED -> D-19: approved]
    - What we know: `unpdf.renderPageAsImage` / pdfjs rendering needs a Node canvas; `@napi-rs/canvas` is the clean choice (prebuilt, slopcheck OK, 17M/wk).
    - What's unclear: it is NOT in the locked CLAUDE.md stack, so adding it is a stack decision, not planning discretion.
    - Recommendation: **Anthony approves adding `@napi-rs/canvas@1.0.2`** (default: yes — it is the only turnkey way to satisfy D-07). If declined, the alternative is sending image-only-PDF bytes directly to providers that accept PDF, which breaks the "any OpenAI-compatible endpoint" portability contract.
 
-2. **Where does the parse trigger live relative to the scan (D-13 auto-parse)?**
+2. **Where does the parse trigger live relative to the scan (D-13 auto-parse)?** [RESOLVED -> D-26: separate `parse:parse-batch` channel]
    - What we know: D-13 chains parse off `runScan`. The scan currently returns a `ScanResult` to the renderer.
    - What's unclear: whether auto-parse runs inside the same IPC call (scan returns after parsing) or as a follow-up `parse:parse-batch` the renderer fires on the loaded set (better for the "parsing N/M" progress UX and per-file isolation).
    - Recommendation: separate `parse:parse-batch(loadedFiles)` channel fired by the renderer after scan, streaming per-file progress — cleaner cancellation, progress, and retry (D-15). Planner decides the exact channel shape.
 
-3. **Progress streaming mechanism for "parsing N/M".**
+3. **Progress streaming mechanism for "parsing N/M".** [RESOLVED -> D-26: `parse:progress` broadcast]
    - What we know: current IPC is request/response (`ipcMain.handle`). Progress needs main->renderer events (like `theme:changed`).
    - Recommendation: add a `parse:progress` broadcast (webContents.send) mirroring the existing theme broadcast pattern; or poll a status. Planner picks; note it in the contract.
 
