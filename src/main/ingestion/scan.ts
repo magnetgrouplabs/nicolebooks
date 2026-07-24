@@ -1,10 +1,15 @@
 // src/main/ingestion/scan.ts
 //
 // Scan orchestrator (ING-01, D-04, D-05). Enumerates the flat inbox once, classifies each
-// entry by name, stream-hashes every supported file, and returns an in-memory ScanResult.
-// This is the walking-path slice (02-01): every supported file is treated as materialized and
-// loaded; the ledger dedupe check (02-02) and the materialization/stability gate (02-03) layer
-// onto this same pipeline at the marked seams below.
+// entry by name, runs the materialization gate, stream-hashes every ready file, and returns an
+// in-memory ScanResult. The ledger dedupe check (02-02) and the materialization/stability gate
+// (02-03) layer onto this same pipeline at the marked seams below.
+//
+// Metadata-first, bytes-last (D-11, SC4): before ANY byte read, each supported file passes two
+// independent gates — a placeholder check (isNotMaterialized, stat/attribute metadata only) and a
+// bounded settling poll (isSettled). Reading bytes is exactly what forces a cloud placeholder to
+// download, so a placeholder or a still-writing file is flagged not-ready-skipped WITHOUT ever
+// opening its data stream, and surfaced for re-scan rather than silently dropped.
 //
 // Read-only invariant (D-04): this module performs NO filesystem mutation anywhere — no
 // rename, unlink, writeFile, or copyFile. It only reads directory entries, stats, and byte
@@ -20,11 +25,22 @@ import { isJunk, isSupported, localDateStamp } from './filetype'
 import { sha256File } from './hash'
 import { resolveInboxPath } from './inbox'
 import { checkPostedHash } from './ledger'
+import { isNotMaterialized, isSettled, readWindowsOfflineFlags } from './materialization'
 
 /** Injectable dependencies so the unit test drives a temp inbox + temp DB without Electron. */
 export interface ScanDeps {
   inboxPath?: string
   db?: Database.Database
+  /** Placeholder gate (default: the real isNotMaterialized). Metadata-only; injected in tests. */
+  isNotMaterialized?: (
+    fullPath: string,
+    siblingNames: Set<string>,
+    fileName: string
+  ) => Promise<boolean>
+  /** Partial-write settling poll (default: the real isSettled). Injected in tests for speed. */
+  isSettled?: (fullPath: string) => Promise<boolean>
+  /** File hasher (default: the real streaming sha256File). A test spy proves bytes-last. */
+  sha256File?: (fullPath: string) => Promise<string>
 }
 
 /**
@@ -37,10 +53,22 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
   // In tests deps.db is always injected, so getDatabase() (which needs Electron) is never hit.
   const db = deps.db ?? getDatabase()
   const inboxPath = deps.inboxPath ?? resolveInboxPath({ db }).path
+  const hashFile = deps.sha256File ?? sha256File
+  const settled = deps.isSettled ?? ((fullPath: string) => isSettled(fullPath))
 
   // Flat, non-recursive enumeration (D-01, Pitfall 3): list this one directory, never descend.
   const entries = await readdir(inboxPath, { withFileTypes: true })
   const files: ScanFile[] = []
+
+  // Sibling names from the SAME readdir, so the macOS `.<name>.icloud` sentinel check needs no
+  // extra directory read.
+  const siblingNames = new Set(entries.map((e) => e.name))
+
+  // Resolve the placeholder gate ONCE. On Windows the offline/recall attribute map is read in a
+  // SINGLE batched spawn for the whole scan (never once per file); on any failure the map is
+  // empty, which drives the load-on-failure fallback (skip only on positive placeholder
+  // evidence). The gate is injectable so tests bypass all OS calls deterministically.
+  const notMaterialized = await resolvePlaceholderGate(inboxPath, deps.isNotMaterialized)
 
   for (const entry of entries) {
     const name = entry.name
@@ -58,12 +86,25 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
       continue
     }
 
-    // SLICE 3 (02-03): materialization + stability gate goes here (skip online-only
-    // placeholders and still-writing files before any byte read). This slice treats every
-    // enumerated supported file as materialized and hashes it.
     const fullPath = join(inboxPath, name)
+
+    // SLICE 3 (02-03): the materialization gate runs BEFORE any byte read (metadata-first,
+    // bytes-last). 1) placeholder check (stat/attribute only): an online-only cloud placeholder
+    // is skipped without opening its bytes, so it is never force-downloaded. 2) settling poll: a
+    // still-writing file is skipped so it is never hashed half-complete. Either failing gate ->
+    // not-ready-skipped, surfaced for re-scan, and CONTINUE without hashing.
+    if (await notMaterialized(fullPath, siblingNames, name)) {
+      files.push({ filename: name, status: 'not-ready-skipped' })
+      continue
+    }
+    if (!(await settled(fullPath))) {
+      files.push({ filename: name, status: 'not-ready-skipped' })
+      continue
+    }
+
+    // Now safe: the file is local and settled. Only here do we read its bytes (bytes-last).
     const st = await stat(fullPath)
-    const hash = await sha256File(fullPath)
+    const hash = await hashFile(fullPath)
     files.push({ filename: name, status: 'loaded', hash, sizeBytes: Number(st.size) })
   }
 
@@ -103,12 +144,43 @@ export async function runScan(deps: ScanDeps = {}): Promise<ScanResult> {
   const duplicates = files.filter(
     (f) => f.status === 'duplicate-excluded' || f.status === 'duplicate-in-batch'
   ).length
+  const notReady = files.filter((f) => f.status === 'not-ready-skipped').length
   const unsupported = files.filter((f) => f.status === 'unsupported-skipped').length
 
   return {
     batchEntryDate: localDateStamp(),
     inboxPath,
     files,
-    summary: { total: files.length, loaded, duplicates, notReady: 0, unsupported }
+    summary: { total: files.length, loaded, duplicates, notReady, unsupported }
   }
+}
+
+/**
+ * Build the placeholder gate for one scan. When a gate is injected (tests) it is used verbatim.
+ * Otherwise the real isNotMaterialized is threaded with a per-scan attribute map: on Windows the
+ * offline/recall attributes are read in a SINGLE batched spawn here (one per scan, never per
+ * file), and any failure yields an empty map so isNotMaterialized loads-on-failure (skip only on
+ * positive placeholder evidence). On macOS/other platforms no batched read is needed.
+ */
+async function resolvePlaceholderGate(
+  inboxPath: string,
+  injected?: (fullPath: string, siblingNames: Set<string>, fileName: string) => Promise<boolean>
+): Promise<(fullPath: string, siblingNames: Set<string>, fileName: string) => Promise<boolean>> {
+  if (injected) return injected
+
+  const platform = process.platform
+  let winFlags: Map<string, number> | undefined
+  if (platform === 'win32') {
+    try {
+      winFlags = await readWindowsOfflineFlags(inboxPath)
+    } catch {
+      winFlags = new Map() // empty -> load-on-failure for every file
+    }
+  }
+
+  return (fullPath, siblingNames, fileName) =>
+    isNotMaterialized(fullPath, siblingNames, fileName, platform, {
+      // Return the already-batched map; the arg is ignored so no per-file spawn occurs.
+      readWinFlags: async () => winFlags ?? new Map()
+    })
 }
