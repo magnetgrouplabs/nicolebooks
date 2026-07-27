@@ -289,11 +289,22 @@ function toRecord(row: ReferenceDbRow): QboRefRecord {
   return { id: row.entity_id, name: row.name, active: row.active === 1 }
 }
 
+/**
+ * The last segment of a fully qualified account name. QuickBooks uses ':' as the hierarchy
+ * separator and reserves it, so splitting on it is exact rather than heuristic. A name with no
+ * separator is already its own leaf.
+ */
+export function accountShortName(fullyQualifiedName: string): string {
+  const segments = fullyQualifiedName.split(':')
+  return segments[segments.length - 1]?.trim() || fullyQualifiedName
+}
+
 function toAccount(row: ReferenceDbRow): QboRefAccount {
   return {
     ...toRecord(row),
     accountType: row.account_type ?? '',
-    accountSubType: row.account_sub_type
+    accountSubType: row.account_sub_type,
+    shortName: accountShortName(row.name)
   }
 }
 

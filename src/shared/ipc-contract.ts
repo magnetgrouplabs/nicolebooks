@@ -319,10 +319,20 @@ export interface QboRefRecord {
  * A chart-of-accounts entry. accountType/accountSubType are carried because they are what
  * separates a category (expense) account from a "Paid from" (bank/credit card) account, and the
  * review grid has to filter the two lists differently.
+ *
+ * `name` is the FULLY QUALIFIED name, so a sub-account reads 'Job Expenses:Job Materials' rather
+ * than 'Job Materials'. That is what QuickBooks itself shows, and it is the only way to tell two
+ * same-named sub-accounts apart: the sandbox company alone has 'Equipment Rental' twice under
+ * different parents, and a dropdown offering the bare leaf twice is unusable.
+ *
+ * `shortName` is the last segment of that path, carried alongside because a parsed bill says
+ * "Job Materials", never the full path. Deriving it here rather than leaving every consumer to
+ * split on a separator keeps the reconciliation matcher from guessing at the format.
  */
 export interface QboRefAccount extends QboRefRecord {
   accountType: string
   accountSubType: string | null
+  shortName: string
 }
 
 /** Counts written by one qbo:sync-reference run, so the UI can say what it refreshed. */
