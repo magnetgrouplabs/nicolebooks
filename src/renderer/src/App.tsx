@@ -1,11 +1,17 @@
 // Plan 01-06: the reusable app shell (UI-SPEC Layout Frame, D-07 through D-09).
 //
-// A CSS grid frame: rows 56px (header) then 1fr, columns 280px (sidebar) then 1fr. The Header
+// A CSS grid frame: rows 72px (header) then 1fr, columns 280px (sidebar) then 1fr. The Header
 // spans both columns and sits above the content at z-index 20; the Sidebar occupies the left
-// column below the header; the content region (24px padding, dominant surface background) swaps
-// between the three placeholder screens. Active-destination state lives here and defaults to
-// Bills (D-09). The whole tree is wrapped in TooltipProvider because the base-nova primitives
-// resolve Base UI (@base-ui/react), whose tooltip primitive requires the provider (01-03).
+// column below the header; the content region swaps between the three screens. Active-destination
+// state lives here and defaults to Bills (D-09). The whole tree is wrapped in TooltipProvider
+// because the base-nova primitives resolve Base UI (@base-ui/react), whose tooltip primitive
+// requires the provider (01-03).
+//
+// THE CONTENT COLUMN IS CAPPED at 1280px (tokens.json container.xl) and centred. It was
+// unconstrained, so on a wide monitor a review row's three editable cells stretched to 400px each
+// to hold an eight-character amount, and the eye had to travel the full width of the screen to get
+// from a vendor to the date beside it. Uncapped data columns are a desktop layout that was never
+// looked at on a desktop.
 
 import { useState } from 'react'
 
@@ -38,11 +44,13 @@ function App(): React.JSX.Element {
 
   return (
     <TooltipProvider>
-      <div className="grid h-screen grid-cols-[280px_1fr] grid-rows-[56px_1fr] bg-background text-foreground">
+      <div className="grid h-screen grid-cols-[280px_1fr] grid-rows-[72px_1fr] bg-background text-foreground">
         <Header />
         <Sidebar active={active} onSelect={setActive} />
-        <main className="col-start-2 row-start-2 overflow-auto bg-background p-6">
-          {renderContent(active, setActive)}
+        <main className="col-start-2 row-start-2 overflow-auto bg-background">
+          <div className="mx-auto w-full max-w-[1280px] px-8 py-6">
+            {renderContent(active, setActive)}
+          </div>
         </main>
       </div>
     </TooltipProvider>

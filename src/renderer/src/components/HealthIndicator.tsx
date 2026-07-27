@@ -69,13 +69,15 @@ export function HealthIndicator(): React.JSX.Element {
       : null
 
   return (
-    <div className="max-w-xl rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center gap-2">
-        <Icon className={cn('size-5', iconColor)} aria-hidden="true" />
-        <span className="text-sm font-semibold text-card-foreground">{label}</span>
+    <div className="rounded-lg border border-border bg-card p-4 shadow-raised">
+      <div className="flex items-center gap-2.5">
+        <Icon className={cn('size-4 shrink-0', iconColor)} aria-hidden="true" />
+        <span className="font-sans text-sm font-semibold text-card-foreground">{label}</span>
       </div>
       {supporting && (
-        <p className="mt-1 pl-7 text-sm font-normal text-muted-foreground">{supporting}</p>
+        <p className="mt-1.5 pl-6.5 font-sans text-sm font-normal text-muted-foreground">
+          {supporting}
+        </p>
       )}
     </div>
   )
