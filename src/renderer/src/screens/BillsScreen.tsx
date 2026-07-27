@@ -37,12 +37,49 @@ import type {
   ParseFileResult,
   ParseFileStatus,
   ParseProgress,
+  ParsedFields,
   ScanFile,
   ScanFileStatus,
   ScanResult
 } from '@shared/ipc-contract'
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive'
+
+/** Every field the row can display, in ParsedFields declaration order. */
+const FIELD_ORDER = [
+  'vendor',
+  'invoiceNumber',
+  'invoiceDate',
+  'dueDate',
+  'subtotalCents',
+  'taxCents',
+  'totalCents',
+  'currency',
+  'suggestedCategory'
+] as const satisfies readonly (keyof ParsedFields)[]
+
+type ParsedFieldKey = (typeof FIELD_ORDER)[number]
+
+const FIELD_LABEL: Record<ParsedFieldKey, string> = {
+  vendor: 'Vendor',
+  invoiceNumber: 'Invoice number',
+  invoiceDate: 'Invoice date',
+  dueDate: 'Due date',
+  subtotalCents: 'Subtotal',
+  taxCents: 'Tax',
+  totalCents: 'Total',
+  currency: 'Currency',
+  suggestedCategory: 'Suggested category'
+}
+
+/** Membership test for "is this string the name of a field this build knows how to display?" */
+const KNOWN_FIELDS: ReadonlySet<string> = new Set<string>(FIELD_ORDER)
+
+/**
+ * The three fields an unattributable flag condemns together, mirroring the same constant in
+ * src/main/parse/confidence.ts. Any one of the three could be the wrong number.
+ */
+const MONEY_FIELDS = ['subtotalCents', 'taxCents', 'totalCents'] as const
 
 // Loaded is the branded default; unsupported is a quiet outline. A caught already-posted file
 // reads destructive so it stands out; a within-scan copy reads secondary (benign — a copy of it
@@ -114,6 +151,107 @@ export function isFlagged(parse?: ParseFileResult): boolean {
   if (!parse) return false
   if ((parse.validationFlags?.length ?? 0) > 0) return true
   return Object.values(parse.confidence ?? {}).some((level) => level === 'flagged')
+}
+
+/**
+ * WHICH displayed fields carry a failed deterministic check. The per-field half of isFlagged.
+ *
+ * Three sources, unioned, plus one backstop:
+ *   1. a `confidence` entry of 'flagged' under a known field name  -> that field
+ *   2. a `validationFlags` entry shaped `prefix:field` whose suffix is a known field name
+ *      -> that field (this includes the D-22 `agreement:` flags, which the renderer keeps
+ *      treating as flagged even though the main process grades them 'low')
+ *   3. ANYTHING ELSE                                               -> UNATTRIBUTED
+ *   4. if anything was UNATTRIBUTED, every one of MONEY_FIELDS is flagged
+ *
+ * Rule 4 is the load-bearing line. ARITHMETIC_FLAG is literally the string
+ * 'arithmetic:subtotal+tax!=total', and the part after its colon is NOT a ParsedFields key --
+ * confidence.ts special-cases that flag and condemns all three money fields together. A naive
+ * `split(':')` mapping here would therefore drop the arithmetic cross-check silently, which is
+ * precisely the WR-10 failure ("a displayed money value must never appear without its flag")
+ * wearing a per-field costume. Rule 4 handles it correctly by construction, without importing
+ * anything from src/main across the process boundary, and it makes every future flag string this
+ * build does not recognize degrade toward showing MORE review markers rather than fewer.
+ *
+ * The consequence worth stating: totalCents is ALWAYS displayed, so rule 4 guarantees that a
+ * non-empty flag set always produces at least one visible marker. That, plus the property
+ * `isFlagged(parse) === (flaggedFields(parse).size > 0)` pinned in test/bills-row-status.test.ts,
+ * is what keeps WR-10 true for every input shape rather than only the ones anticipated here.
+ */
+export function flaggedFields(parse?: ParseFileResult): Set<string> {
+  const flagged = new Set<string>()
+  if (!parse) return flagged
+  let unattributed = false
+
+  for (const [key, level] of Object.entries(parse.confidence ?? {})) {
+    if (level !== 'flagged') continue
+    if (KNOWN_FIELDS.has(key)) flagged.add(key)
+    else unattributed = true
+  }
+
+  for (const flag of parse.validationFlags ?? []) {
+    // A cached row's flag list is rehydrated from JSON, so a degraded blob could hand back a
+    // non-string. Count it rather than skip it: dropping it is the one outcome WR-10 forbids.
+    if (typeof flag !== 'string') {
+      unattributed = true
+      continue
+    }
+    const separator = flag.indexOf(':')
+    const field = separator < 0 ? '' : flag.slice(separator + 1)
+    if (separator >= 0 && KNOWN_FIELDS.has(field)) flagged.add(field)
+    else unattributed = true
+  }
+
+  if (unattributed) for (const key of MONEY_FIELDS) flagged.add(key)
+  return flagged
+}
+
+/**
+ * The row's single status chip: one label and one variant, resolved by first match.
+ *
+ * Order matters and is deliberate.
+ *
+ * A file whose status is anything but 'loaded' never entered the parse pipeline (BillsScreen
+ * only sends loaded files to parse.parseBatch), so its file status is the only fact that exists
+ * about it. Putting those rows first also means that if a future change ever parses an
+ * included-anyway duplicate, the dedupe warning cannot be overwritten by a cheerful "Ready to
+ * review". Losing an "already entered in QuickBooks" warning is the worse failure, and it is safe
+ * to order it this way ONLY because WR-10 is enforced in the field list, not by this chip.
+ *
+ * Among the parse rows, "Could not read" and "Needs review" are the two states that require the
+ * user to act, so they outrank both "Already read" (a cost and provenance fact, already reported
+ * in the batch summary line) and the bland "Loaded", which carries no information at all once a
+ * parse result exists. A flagged bill wearing a calm "Already read" chip would be the chip-level
+ * version of the exact WR-10 failure.
+ *
+ * Variant semantics this produces: default = done and good, secondary = in progress or a benign
+ * no-op, destructive = needs you, outline = skipped and not in the batch.
+ */
+export function statusChip(
+  file: ScanFile,
+  parse?: ParseFileResult
+): { label: string; variant: BadgeVariant } {
+  // Rows 1 and 2: an already-posted duplicate, carrying its posted date when the ledger knows it.
+  if (file.status === 'duplicate-excluded') {
+    return {
+      label: file.postedAt ? `Already entered on ${file.postedAt}` : STATUS_LABEL[file.status],
+      variant: STATUS_VARIANT[file.status]
+    }
+  }
+  // Rows 3, 4 and 5: every other non-loaded status reads straight off the file-status tables.
+  if (file.status !== 'loaded') {
+    return { label: STATUS_LABEL[file.status], variant: STATUS_VARIANT[file.status] }
+  }
+  // Row 6.
+  if (parse?.status === 'parse-failed') return { label: 'Could not read', variant: 'destructive' }
+  // Row 7.
+  if (isFlagged(parse)) return { label: 'Needs review', variant: 'destructive' }
+  // Row 8.
+  if (parse?.status === 'cached') return { label: 'Already read', variant: 'secondary' }
+  // Row 9.
+  if (parse?.status === 'parsed') return { label: 'Ready to review', variant: 'default' }
+  // Row 10: loaded, not read yet.
+  return { label: 'Loaded', variant: 'secondary' }
 }
 
 /**
