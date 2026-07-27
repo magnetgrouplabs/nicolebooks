@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md (Wave 1 contract foundation); Wave 2 plans 03-02..03-06 unblocked and parallel
-last_updated: "2026-07-27T12:36:50.002Z"
+stopped_at: Completed 03-02-PLAN.md (AI client configuration, AI-01..04); Wave 2 plans 03-03..03-06 remain unblocked and parallel
+last_updated: "2026-07-27T13:01:04.955Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 18
-  completed_plans: 11
+  completed_plans: 12
   percent: 13
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 03 (ai-client-and-parse-pipeline) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -63,6 +63,7 @@ Progress: [██████░░░░] 61% (11/18 plans complete — Phases 
 | Phase 02 P02-02 | 4min | 3 tasks | 5 files |
 | Phase 02 P02-03 | 9min | 3 tasks | 5 files |
 | Phase 03 P01 | 11min | 3 tasks | 9 files |
+| Phase 03 P02 | 15min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,10 @@ Recent decisions affecting current work:
 - [Phase 02]: Materialization (02-03): the scan runs isNotMaterialized then isSettled BEFORE sha256File for every file (metadata-first, bytes-last), so a cloud placeholder or a still-writing file is never hashed/downloaded — it is flagged not-ready-skipped and surfaced for re-scan. macOS uses blocks===0 / .icloud sentinel; Windows reads OFFLINE/RECALL attribute bits via ONE batched injection-safe execFile per scan (args array, shell:false, path via env var; T-02-08). ING-03 complete (both unsupported + not-materialized halves).
 - [Phase 02]: Materialization (02-03): inconclusive-detection fallback resolved — the scan LOADS on total detection failure (Windows attribute read throws/empty) and SKIPS only on positive placeholder evidence, so a real bill is never false-skipped (02-RESEARCH OQ1).
 - [Phase 02]: Fixed a stray NUL byte a prior plan left in BillsScreen fileKey (`${filename}\x00${hash}`) that made git treat the source file as binary; replaced with a space (Rule 1).
+- [Phase 03]: AI config (03-02): payload-free IPC handlers must Zod-parse raw ?? {} — the preload invokes with no argument, so a bare parse(raw) on a strict-empty schema always throws. Proven on the running app; the same latent bug breaks Phase 2 ingestion:scan (logged as a blocker).
+- [Phase 03]: AI config (03-02): the API key and base URL are write-only from the renderer perspective — written via secrets.set, read ONLY in src/main/ai/client.ts, never returned across IPC, never logged, and SettingsScreen has no read path back (D-05/T-03-01). buildClient rejects any non-https or malformed base URL via new URL() before instantiating the client (T-03-05).
+- [Phase 03]: AI config (03-02): the ai IPC layer never forwards a raw error — three opaque service codes map to fixed recoverable copy and everything else falls back to one generic sentence, because OpenAI SDK errors routinely embed the request URL.
+- [Phase 03]: AI config (03-02): classifyVision runs the curated-family rung even when metadata is present but omits image, so a provider under-reporting modalities cannot strip the Vision badge off gpt-4o; a model entry failing the lenient ModelInfoSchema is skipped, never fatal to the picker.
 
 ### Pending Todos
 
@@ -109,6 +114,7 @@ None yet.
 - Phase 4 (QuickBooks Connection) is gated on Anthony providing QuickBooks sandbox client id, client secret, and redirect URI. Sandbox credentials are available immediately; production credentials come later at Phase 8.
 - Phase 8 packaging depends on code-signing certificates with real lead time (Apple Developer Program enrollment, Windows HSM or cloud code-signing). Start procurement early, well before Phase 8 opens.
 - OAuth token-lifecycle facts changed in November 2025 (60-minute access tokens, roughly 24-hour refresh-token rotation, 5-year cap, mandatory Reconnect URL by Feb 24, 2026). Re-verify against Intuit's live docs at Phase 4 planning time.
+- APP-BREAKING (Phase 2 regression, found during 03-02): ingestion:scan always rejects. src/main/ipc/ingestion.ts:41 runs ScanRequestSchema.parse(raw) but the preload invokes with no argument, so raw is undefined and the strict-empty Zod parse throws 'expected object, received undefined'. Confirmed on the running app — the Bills 'Scan now' button can never succeed. One-character fix: parse(raw ?? {}). No unit or e2e spec invokes window.api.ingestion.scan(), which is why Phase 2 shipped green. Not fixed in 03-02 (out of scope: another phase's file). See deferred-items.md item 2. Recommend a /gsd:quick fix before the Phase 3 human gate.
 
 ## Deferred Items
 
@@ -120,6 +126,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T12:36:49.997Z
-Stopped at: Completed 03-01-PLAN.md (Wave 1 contract foundation); Wave 2 plans 03-02..03-06 unblocked and parallel
+Last session: 2026-07-27T13:01:04.950Z
+Stopped at: Completed 03-02-PLAN.md (AI client configuration, AI-01..04); Wave 2 plans 03-03..03-06 remain unblocked and parallel
 Resume file: None
