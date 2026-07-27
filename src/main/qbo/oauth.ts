@@ -73,6 +73,12 @@ export interface OAuthDeps extends TokenDeps {
   timeoutMs?: number
   environment?: QboEnvironment
   redirectUri?: string
+  /**
+   * Notified with the port that was actually bound, before the browser is opened. Production has no
+   * use for it (the port is fixed and registered with Intuit); a spec asking for port 0 needs it to
+   * know where to send the simulated redirect.
+   */
+  onListening?: (port: number) => void
 }
 
 /** Generate the per-attempt state nonce. 32 bytes of CSPRNG output, hex encoded. */
@@ -143,7 +149,11 @@ export async function waitForOAuthCallback(input: {
   port?: number
   path?: string
   timeoutMs?: number
-  /** Called once the socket is actually listening, so the browser is opened only after that. */
+  /**
+   * Called once the socket is actually listening, with the port that was ACTUALLY bound. Passing
+   * the real port rather than the requested one lets a spec ask for port 0 and still address the
+   * server, and in production the two are identical because the port is fixed.
+   */
   onListening?: (port: number) => void | Promise<void>
 }): Promise<OAuthCallback> {
   if (callbackInFlight) throw new Error(QBO_AUTH_IN_PROGRESS)
@@ -230,7 +240,13 @@ export async function waitForOAuthCallback(input: {
       // "localhost" to ::1 fall back to IPv4, which is why the registered URI can still say
       // localhost while the socket is pinned to the IPv4 loopback.
       server.listen(port, '127.0.0.1', () => {
-        void input.onListening?.(port)
+        const address = server?.address()
+        const boundPort = typeof address === 'object' && address ? address.port : port
+        void Promise.resolve(input.onListening?.(boundPort)).catch(() => {
+          // Failing to open the browser is not a reason to leave the listener hanging until the
+          // timeout: nothing is ever going to arrive on it.
+          finish(() => reject(new Error(QBO_AUTH_CANCELED)))
+        })
       })
     })
   } finally {
@@ -273,7 +289,8 @@ export async function connectToQuickBooks(deps: OAuthDeps = {}): Promise<Connect
     expectedState: state,
     port: deps.port,
     timeoutMs: deps.timeoutMs,
-    onListening: async () => {
+    onListening: async (boundPort) => {
+      deps.onListening?.(boundPort)
       const authorizeUrl = buildAuthorizeUrl({
         clientId: credentials.clientId,
         state,

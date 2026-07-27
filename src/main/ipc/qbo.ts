@@ -77,7 +77,7 @@ export const NOT_IMPLEMENTED = 'NOT_IMPLEMENTED'
  * en dash (house rule for user-facing text). None of them names a host, a port, a realm id, or a
  * credential, which is the whole reason this table exists rather than a passthrough.
  */
-const QBO_ERROR_COPY: Readonly<Record<string, string>> = {
+export const QBO_ERROR_COPY: Readonly<Record<string, string>> = {
   [NOT_IMPLEMENTED]: 'This feature is still being built.',
   [QBO_CLIENT_CREDENTIALS_MISSING]:
     'Add your QuickBooks app client id and client secret in Settings, then connect again.',
