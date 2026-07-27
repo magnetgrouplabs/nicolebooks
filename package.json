@@ -15,6 +15,7 @@
     "postinstall": "npm run rebuild",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test": "vitest run && playwright test",
     "package": "npm run build && electron-builder --publish never",
     "package:win": "npm run build && electron-builder --win nsis --publish never",

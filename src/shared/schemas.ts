@@ -172,13 +172,26 @@ export const QboSyncReferenceSchema = z.object({}).strict()
 export const QboGetReferenceSchema = z.object({}).strict()
 
 /**
- * qbo:set-environment payload gate. The ONE qbo channel that takes input, and the enum is the whole
- * point of the gate: this value selects which Intuit host every later request is sent to, so it may
- * only ever be one of two literals. A free-form string here would be a renderer-supplied host.
+ * qbo:set-environment payload gate. The enum is the whole point of the gate: this value selects
+ * which Intuit host every later request is sent to, so it may only ever be one of two literals.
+ * A free-form string here would be a renderer-supplied host.
  */
 export const QboSetEnvironmentSchema = z
   .object({ environment: z.enum(['sandbox', 'production']) })
   .strict()
+
+/**
+ * qbo:create-vendor payload, the other qbo channel that carries renderer input: the name of a
+ * vendor that does not exist yet cannot come from anywhere else.
+ *
+ * Trimmed BEFORE the length checks, so a field holding only spaces is refused rather than sent to
+ * QuickBooks as an empty DisplayName. The 100-character ceiling is Intuit's own DisplayName limit:
+ * catching it here turns a mid-click API rejection into an up-front validation error. The value is
+ * sent as a JSON string field, never interpolated into a URL or a query statement.
+ */
+export const QboCreateVendorSchema = z.object({
+  displayName: z.string().trim().min(1).max(100)
+})
 
 // --- recon -------------------------------------------------------------------
 

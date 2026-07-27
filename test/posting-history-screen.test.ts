@@ -23,6 +23,7 @@ import {
   batchChip,
   batchSummaryLine,
   entryChip,
+  entryLabel,
   formatCents,
   reportStatus,
   undoConfirmBody
@@ -51,6 +52,9 @@ function batch(overrides: Partial<PostingBatchSummaryRow> = {}): PostingBatchSum
 function entry(overrides: Partial<PostingBatchEntry> = {}): PostingBatchEntry {
   return {
     fileHash: HASH_A,
+    // Denormalized at post time. The screen names the DOCUMENT, because a truncated SHA-256
+    // names nothing to the person reading it.
+    filename: 'apex-plumbing-supply-invoice-APX-84213.pdf',
     entryType: 'bill',
     qboId: '55',
     syncToken: '0',
@@ -226,6 +230,20 @@ describe('the undo confirmation says exactly what will happen', () => {
     )
     expect(busy).toContain('Removing...')
     expect(busy.match(/<button[^>]*\sdisabled=""/g)).toHaveLength(2)
+  })
+})
+
+// Found by the live drill: the History screen listed a whole batch as "2df39da7907f...",
+// "eff91832a6f9...", and so on. A truncated SHA-256 is not a name, and the only handle a person has
+// on a document is what the file is called.
+describe('entryLabel names the document', () => {
+  it('uses the filename recorded at post time', () => {
+    expect(entryLabel(entry())).toBe('apex-plumbing-supply-invoice-APX-84213.pdf')
+  })
+
+  it('falls back to the hash rather than to an empty row when no filename was recorded', () => {
+    expect(entryLabel(entry({ filename: null }))).toBe(`${HASH_A.slice(0, 12)}...`)
+    expect(entryLabel(entry({ filename: '   ' }))).toBe(`${HASH_A.slice(0, 12)}...`)
   })
 })
 

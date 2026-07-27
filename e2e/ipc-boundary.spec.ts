@@ -76,10 +76,13 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
     // Finish sprint (SEAMS): the four new groups are likewise named methods only. Handler bodies
     // land later; the bridge surface is pinned here so a downstream agent cannot widen it into a
     // generic invoke, and so a group that quietly loses a method fails at merge.
-    // setEnvironment is PROD-MODE's one added method: sandbox or live company. It is named, like
-    // every other method here, and it takes a two-value enum rather than a URL.
+    // setEnvironment (PROD-MODE) picks sandbox or live company via a two-value enum, never a URL.
+    // createVendor (E2E-INTEGRATION) is the explicit "Add new vendor" write the review screen
+    // offers on a row whose supplier is not in the company yet. Both are named, like every other
+    // method here, so the group is still not a generic invoke.
     expect(apiShape.qbo).toEqual([
       'connect',
+      'createVendor',
       'disconnect',
       'getReference',
       'onStatusChanged',

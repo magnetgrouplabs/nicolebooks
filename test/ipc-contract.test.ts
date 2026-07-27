@@ -142,6 +142,8 @@ describe('Channels are stable strings', () => {
       qboDisconnect: 'qbo:disconnect',
       qboSyncReference: 'qbo:sync-reference',
       qboGetReference: 'qbo:get-reference',
+      // Added by E2E-INTEGRATION: the review screen's explicit "Add new vendor" write.
+      qboCreateVendor: 'qbo:create-vendor',
       qboStatusChanged: 'qbo:status-changed',
       // Added by PROD-MODE (finish sprint): sandbox or live company. The pin is the point, because
       // this is the one channel whose payload chooses which Intuit host the app talks to.

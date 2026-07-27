@@ -2,6 +2,8 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { getDatabase } from './db/connection'
 import { migrate } from './db/migrate'
+import { installE2EHooks } from './integration/e2e-hooks'
+import { installPostingBridge } from './integration/posting-bridge'
 import { registerIpc } from './ipc/register'
 import { parseDevQboCommand, runDevQboCommand } from './qbo/dev-cli'
 import { initAutoUpdater } from './updater'
@@ -73,6 +75,12 @@ if (!app.requestSingleInstanceLock()) {
     const db = getDatabase()
     migrate(db)
 
+    // Introduce the posting engine to the live QuickBooks connection. Registration only: no
+    // database read, no network call, and no token access happens here, so it is safe before a
+    // company has ever been connected and before the dev bootstrap below has seeded one. Until
+    // this ran, every send mapped to "connect on the Settings screen" no matter what was stored.
+    installPostingBridge()
+
     // Development-only QuickBooks bootstrap (--dev-seed-qbo and friends). It runs after the
     // database and safeStorage are ready, prints a redacted report, and exits WITHOUT creating a
     // window, so it never leaves a stray app running. Guarded on app.isPackaged, so the flags are
@@ -98,6 +106,10 @@ if (!app.requestSingleInstanceLock()) {
     // and the handlers initialize post-ready (RESEARCH Pitfall 3). The renderer's window.api
     // now reaches live, sender-validated, Zod-gated handlers.
     registerIpc()
+
+    // Read-only verification hooks for the live sandbox drill. Inert unless BOTH app.isPackaged is
+    // false and NICOLEBOOKS_E2E=1 is set, so a shipped installer has no such surface at all.
+    installE2EHooks()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

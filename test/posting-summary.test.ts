@@ -91,6 +91,9 @@ describe('posting:batch-detail', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]).toEqual({
       fileHash: hash('a'),
+      // null here because this spec sends rows that were never in the ingestion ledger, which is
+      // exactly the case the screen falls back to the hash for.
+      filename: null,
       entryType: 'bill',
       qboId: '1',
       syncToken: '0',

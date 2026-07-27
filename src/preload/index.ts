@@ -79,10 +79,11 @@ const api: IpcApi = {
     disconnect: () => ipcRenderer.invoke(Channels.qboDisconnect),
     syncReference: () => ipcRenderer.invoke(Channels.qboSyncReference),
     getReference: () => ipcRenderer.invoke(Channels.qboGetReference),
-    // Wrapped into an object before it crosses, exactly like ai.setModel(modelId): the handler's
-    // schema validates the wrapper, not a bare string.
+    // Wrapped into objects before they cross, exactly like ai.setModel(modelId) and
+    // recon.match(fileHashes): the handler's schema validates the wrapper, not the bare string.
     setEnvironment: (environment) =>
       ipcRenderer.invoke(Channels.qboSetEnvironment, { environment }),
+    createVendor: (displayName) => ipcRenderer.invoke(Channels.qboCreateVendor, { displayName }),
     // Same subscribe/unsubscribe shape as theme.onChange: the caller gets a disposer, so a React
     // effect cleanup removes exactly its own listener.
     onStatusChanged: (cb) => {

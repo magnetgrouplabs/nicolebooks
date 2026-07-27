@@ -42,6 +42,9 @@ Fable merges worktree branches and reviews between waves. Suite must stay green
 - Migration numbers: 0004 = qbo reference cache (QBO-CONNECT), 0005 = posting/audit
   (POSTING-ENGINE). No other agent adds migrations without Fable assigning a number.
 - OAuth loopback: http://localhost:8734/oauth/callback (registered in Intuit portal).
+- qbo:create-vendor channel (assigned 2026-07-27, E2E-INTEGRATION implements): explicit
+  user-confirmed vendor creation from the review table's unknown-vendor state, prefilled
+  with the editable parsed name. Silent creation stays forbidden (RECON-03).
 - QBO tokens for live testing: .credentials/qbo-tokens.json. Refresh rotates the
   refresh token: re-read the file before refreshing, write back immediately after.
   LIVE-SEED never refreshes (works within the 1h access token window).

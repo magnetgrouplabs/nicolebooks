@@ -14,6 +14,7 @@
 // the entry. Re-wording it here would replace a specific instruction with a vaguer one. The only
 // message this module invents is the fallback for a rejection that arrived with no message at all.
 
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { toPostingRows, type ReviewRow } from './model'
 import type { PostingRow, PostingSendResult } from '@shared/ipc-contract'
 
@@ -65,7 +66,9 @@ export async function sendReviewBatch(
     const result = await send(payload)
     return { ok: true, batchId: result.batchId, sent: payload }
   } catch (err) {
-    const message = err instanceof Error ? err.message.trim() : ''
+    // Unwrapped first: Electron rejects an invoke with its OWN error, whose message carries the
+    // channel name and the word Error in front of whatever main actually said.
+    const message = ipcErrorMessage(err)
     const readable = message.length > 0 && isReadableSentence(message)
     return { ok: false, error: readable ? message : GENERIC_SEND_ERROR }
   }

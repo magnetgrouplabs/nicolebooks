@@ -15,6 +15,7 @@
 // person to seed from it gets a dead token with no clue why. Both directions are therefore
 // explicit:
 //   seed    file  -> keychain
+//   seed-ai file  -> keychain + app_settings (the AI base URL, key, and model)
 //   export  keychain -> file   (run this after anything that may have refreshed)
 //   probe   refresh + verify + sync, then export automatically
 // The exporter re-reads the file immediately before writing so it preserves fields it does not own.
@@ -27,6 +28,9 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { AI_API_KEY_SECRET, AI_BASE_URL_SECRET } from '../ai/client'
+import { setSelectedModel } from '../ai/models'
+import { secretStore } from '../secrets/secret-store'
 import { fetchCompanyName } from './client'
 import { getRealmId, getStatus, markConnected, setLastSyncAt } from './connection'
 import { getQboEnvironment } from './environment'
@@ -42,7 +46,7 @@ import {
 } from './tokens'
 
 /** The dev commands this module understands. */
-export type DevQboCommand = 'seed' | 'probe' | 'export' | 'status' | 'reset'
+export type DevQboCommand = 'seed' | 'seed-ai' | 'probe' | 'export' | 'status' | 'reset'
 
 /** Shape of .credentials/qbo-tokens.json. Extra keys are preserved on write. */
 interface TokenFile {
@@ -64,6 +68,7 @@ export function parseDevQboCommand(argv: readonly string[]): DevQboCommand | nul
   for (const arg of argv) {
     const flag = arg.split('=')[0]
     if (flag === '--dev-seed-qbo') return 'seed'
+    if (flag === '--dev-seed-ai') return 'seed-ai'
     if (flag === '--dev-qbo-probe') return 'probe'
     if (flag === '--dev-qbo-export') return 'export'
     if (flag === '--dev-qbo-status') return 'status'
@@ -93,7 +98,10 @@ export function findCredentialsDir(
   argv: readonly string[],
   startDirs: readonly string[]
 ): string | null {
-  const explicit = argValue(argv, '--dev-seed-qbo') ?? process.env['NICOLEBOOKS_CREDENTIALS_DIR']
+  const explicit =
+    argValue(argv, '--dev-seed-qbo') ??
+    argValue(argv, '--dev-seed-ai') ??
+    process.env['NICOLEBOOKS_CREDENTIALS_DIR']
   if (explicit) {
     const candidate = resolve(explicit)
     return existsSync(join(candidate, 'qbo-tokens.json')) ? candidate : null
@@ -123,6 +131,35 @@ export function parseClientCredentials(markdown: string): { clientId: string; cl
   const secret = /Client Secret \(Development\):\s*(\S+)/i.exec(markdown)?.[1]
   if (!id || !secret) return null
   return { clientId: id, clientSecret: secret }
+}
+
+/** The AI settings the credentials note carries, as the Settings screen would have stored them. */
+export interface AiCredentials {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+/**
+ * Pull the AI base URL, key, and default model out of the credentials note.
+ *
+ * The note is a human-maintained markdown form whose labels carry parenthetical examples, and those
+ * examples contain colons ("(e.g. https://api.openai.com/v1 or ...)"). So the base-URL pattern is
+ * anchored on the VALUE being a URL rather than on the label ending at the first colon; the regex
+ * backtracks past the colons inside the example until the remainder actually parses as one.
+ *
+ * The model is normalized by collapsing internal whitespace to a hyphen, because a human writes
+ * "gpt-4o mini" where the API expects "gpt-4o-mini". Case is deliberately left alone: provider
+ * qualified ids are case sensitive on some endpoints, so lowercasing would break more than it fixed.
+ */
+export function parseAiCredentials(markdown: string): AiCredentials | null {
+  const baseUrl = /^\s*-\s*Base URL[^\n]*:\s*(https?:\/\/\S+)\s*$/im.exec(markdown)?.[1]
+  const apiKey = /^\s*-\s*API key:\s*(\S+)\s*$/im.exec(markdown)?.[1]
+  const rawModel = /^\s*-\s*Vision-capable model[^\n]*:\s*(.+?)\s*$/im.exec(markdown)?.[1]
+  if (!baseUrl || !apiKey || !rawModel) return null
+  const model = rawModel.trim().replace(/\s+/g, '-')
+  if (model === '') return null
+  return { baseUrl, apiKey, model }
 }
 
 /** Never print a credential. Report enough to tell two values apart and nothing more. */
@@ -208,6 +245,38 @@ function commandSeed(ctx: DevContext): void {
       `  access token   ${redact(file.access_token)}`,
       `  realm id       ${file.realmId}`,
       `  access expiry  ${expiresAt ? new Date(expiresAt).toISOString() : 'treated as expired'}`,
+      ''
+    ].join('\n')
+  )
+}
+
+/**
+ * file -> keychain + app_settings, for the AI credentials.
+ *
+ * It writes EXACTLY what the Settings screen writes, through the same code paths: the base URL and
+ * the key into the encrypted secret store under the keys src/main/ai/client.ts reads, and the model
+ * id into app_settings under the key src/main/ai/models.ts reads. Anything else would seed a state
+ * the real UI can never produce, and the live drill would then be proving the wrong thing.
+ *
+ * The key is never printed, not even partially beyond the shared redact() form.
+ */
+function commandSeedAi(ctx: DevContext): void {
+  const notePath = join(ctx.credentialsDir, 'CREDENTIALS.md')
+  const credentials = existsSync(notePath) ? parseAiCredentials(readFileSync(notePath, 'utf8')) : null
+  if (!credentials) {
+    throw new Error('CREDENTIALS.md did not contain an AI base URL, API key, and model.')
+  }
+
+  secretStore.set(AI_BASE_URL_SECRET, credentials.baseUrl)
+  secretStore.set(AI_API_KEY_SECRET, credentials.apiKey)
+  setSelectedModel(credentials.model)
+
+  process.stdout.write(
+    [
+      'dev-seed-ai: seeded from ' + ctx.credentialsDir,
+      `  base url       ${credentials.baseUrl}`,
+      `  api key        ${redact(credentials.apiKey)}`,
+      `  model          ${credentials.model}`,
       ''
     ].join('\n')
   )
@@ -315,6 +384,8 @@ export async function runDevQboCommand(
   switch (command) {
     case 'seed':
       return commandSeed(ctx)
+    case 'seed-ai':
+      return commandSeedAi(ctx)
     case 'export':
       return commandExport(ctx)
     case 'status':

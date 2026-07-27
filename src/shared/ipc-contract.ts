@@ -55,6 +55,11 @@ export const Channels = {
   qboDisconnect: 'qbo:disconnect',
   qboSyncReference: 'qbo:sync-reference',
   qboGetReference: 'qbo:get-reference',
+  // Added by E2E-INTEGRATION: the review screen's "Add new vendor" affordance, the one QuickBooks
+  // WRITE outside posting. It exists because a document can name a supplier the company has never
+  // billed with, and reconciliation is forbidden from creating one on its own (RECON-03). It fires
+  // only from an explicit click on the row that needs it.
+  qboCreateVendor: 'qbo:create-vendor',
   qboStatusChanged: 'qbo:status-changed', // main->renderer broadcast (mirrors themeChanged)
   // Added by PROD-MODE (finish sprint): point the app at the sandbox or at a live QuickBooks
   // company. It is a WRITE channel rather than an ordinary setting because switching must clear
@@ -397,6 +402,15 @@ export interface QboApi {
    * key 'qbo-environment', which is where it is stored.
    */
   setEnvironment(environment: QboEnvironment): Promise<QboStatus>
+
+  /**
+   * Create one vendor in the connected company and return the record QuickBooks assigned.
+   *
+   * The returned record is already in the local reference cache, so the caller can select it
+   * immediately without waiting for a full sync. A name that already exists rejects with copy that
+   * says to pick the existing vendor instead, because that is the actual fix.
+   */
+  createVendor(displayName: string): Promise<QboRefRecord>
   onStatusChanged(cb: (status: QboStatus) => void): () => void
 }
 
@@ -532,6 +546,14 @@ export interface PostingBatchesResult {
  */
 export interface PostingBatchEntry {
   fileHash: string
+  /**
+   * The document this entry came from, recorded at post time.
+   *
+   * Carried because the History screen has to name the thing it is talking about, and a truncated
+   * SHA-256 names nothing to the person reading it. null only when the file was never in the
+   * ingestion ledger, in which case the screen falls back to the hash rather than to an empty row.
+   */
+  filename: string | null
   entryType: PostingEntryType
   qboId: string | null
   syncToken: string | null

@@ -30,6 +30,7 @@ import { BrowserWindow, ipcMain, shell } from 'electron'
 import { Channels, type QboStatus } from '../../shared/ipc-contract'
 import {
   QboConnectSchema,
+  QboCreateVendorSchema,
   QboDisconnectSchema,
   QboGetReferenceSchema,
   QboSetEnvironmentSchema,
@@ -50,10 +51,12 @@ import {
   QBO_SECRET_STORE_UNAVAILABLE,
   QBO_SYNC_FAILED,
   QBO_TOKEN_EXCHANGE_FAILED,
-  QBO_TOKEN_REFRESH_FAILED
+  QBO_TOKEN_REFRESH_FAILED,
+  QBO_VENDOR_DUPLICATE_NAME
 } from '../qbo/errors'
 import {
   connect,
+  createVendor,
   disconnect,
   getReference,
   markConnectionExpired,
@@ -112,7 +115,9 @@ export const QBO_ERROR_COPY: Readonly<Record<string, string>> = {
   [QBO_REQUEST_FAILED]:
     'Could not reach QuickBooks just now. Check your internet connection, then try again.',
   [QBO_SYNC_FAILED]:
-    'Could not read your QuickBooks lists just now. Check your internet connection, then choose Sync now again.'
+    'Could not read your QuickBooks lists just now. Check your internet connection, then choose Sync now again.',
+  [QBO_VENDOR_DUPLICATE_NAME]:
+    'A vendor with this name already exists in QuickBooks. Pick it from the list instead.'
 }
 
 const GENERIC_QBO_ERROR =
@@ -205,15 +210,25 @@ export function registerQboIpc(): void {
     return runQboOperation(() => getReference())
   })
 
-  // The one qbo channel that takes input, and the enum gate is why: this value selects which Intuit
-  // host every later request goes to. A real change clears the stored connection main-side in the
-  // same step, so the renderer cannot end up holding "connected" against an environment whose
-  // tokens were never valid, and the resulting status is broadcast like any other change.
+  // The enum gate is why this channel takes input: the value selects which Intuit host every later
+  // request goes to. A real change clears the stored connection main-side in the same step, so the
+  // renderer cannot end up holding "connected" against an environment whose tokens were never
+  // valid, and the resulting status is broadcast like any other change.
   ipcMain.handle(Channels.qboSetEnvironment, async (event, raw) => {
     assertTrustedSender(event)
     const payload = QboSetEnvironmentSchema.parse(raw ?? {})
     const status = await runQboOperation(() => setEnvironment(payload.environment))
     broadcastQboStatus(status)
     return status
+  })
+
+  // The one company-data write in this group. It does NOT broadcast a status change: creating a
+  // vendor changes the company's data, not the connection, and a status broadcast would make every
+  // open window re-render for something none of them display. The new record comes back in the
+  // response, so the caller can select it without a second call.
+  ipcMain.handle(Channels.qboCreateVendor, async (event, raw) => {
+    assertTrustedSender(event)
+    const { displayName } = QboCreateVendorSchema.parse(raw)
+    return runQboOperation(() => createVendor(displayName))
   })
 }

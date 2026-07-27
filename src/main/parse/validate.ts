@@ -241,10 +241,51 @@ function isPresent(value: string | null): boolean {
   return value !== null && value.trim() !== ''
 }
 
-/** An optional string that came back empty is an absence, not an empty review cell. */
+/**
+ * The words a model writes when it means "nothing", spelled as data instead of as an absence.
+ *
+ * The prompt asks for null when a field is absent and the schema types it nullable, and MOST of the
+ * time the model complies. Sometimes it writes the WORD instead. The live drill caught exactly that:
+ * one of the nine fixtures came back with suggested_category set to the four-character string
+ * "null", which SQLite then stored as text, the review row displayed as a category, and
+ * reconciliation ranked against the company's chart of accounts.
+ *
+ * On suggested_category that is cosmetic. On invoice_number it is not: that value becomes the
+ * QuickBooks DocNumber, so an uncaught "N/A" files a bill under the reference number "N/A" in
+ * somebody's books, permanently, and the user has no reason to look twice at a field that looks
+ * filled in.
+ *
+ * Matching is case-insensitive and ignores surrounding punctuation, because "None", "(none)", and
+ * "N/A." are the same absence written three ways.
+ */
+const ABSENCE_WORDS: ReadonlySet<string> = new Set([
+  'null',
+  'nil',
+  'none',
+  'n/a',
+  'na',
+  'not applicable',
+  'not available',
+  'not found',
+  'unknown',
+  'undefined',
+  'unspecified',
+  'not specified',
+  'not provided'
+])
+
+/**
+ * An optional string that came back empty, or that came back saying it is empty, is an ABSENCE.
+ *
+ * A field left blank and a field filled in with the word "none" mean the same thing to the person
+ * reading the screen, so they have to mean the same thing to everything downstream: an empty review
+ * cell, no DocNumber on the entry, and nothing for the matcher to rank.
+ */
 function blankToNull(value: string | null): string | null {
   const trimmed = value === null ? '' : value.trim()
-  return trimmed === '' ? null : trimmed
+  if (trimmed === '') return null
+  const normalized = trimmed.toLowerCase().replace(/^[([{"']+|[)\]}"'.]+$/g, '')
+  return ABSENCE_WORDS.has(normalized) ? null : trimmed
 }
 
 const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/
