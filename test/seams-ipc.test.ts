@@ -22,6 +22,7 @@
 // which asserts the SAME four properties against the real body. The registration list at the top
 // stays exhaustive either way, so a group that loses a channel still fails here.
 //   - upload + ingestion:pick-files (INGEST-UX): now covered by test/upload-ipc.test.ts.
+//   - recon:match (RECON): now covered by test/recon-ipc.test.ts.
 //
 // electron is mocked so ipcMain.handle registrations are captured instead of touching a real IPC
 // bus (the test/ingestion-ipc-scan.test.ts pattern), and trusted-sender is a no-op so this targets
@@ -84,6 +85,18 @@ vi.mock('../src/main/qbo/service', () => ({
     syncedAt: null
   }),
   markConnectionExpired: (): void => {}
+}))
+
+/**
+ * RECON landed the real recon:match body, so that channel no longer rejects with the stub copy. Its
+ * SERVICE layer is mocked here for the same reason the qbo one is: this file keeps testing that the
+ * sender gate and the payload gate still run first, in that order, while the matching behaviour
+ * itself is covered by test/recon-match.test.ts and test/recon-service.test.ts.
+ */
+vi.mock('../src/main/recon/service', () => ({
+  RECON_NOT_CONNECTED: 'RECON_NOT_CONNECTED',
+  RECON_REFERENCE_EMPTY: 'RECON_REFERENCE_EMPTY',
+  matchBatch: () => ({ matches: {} })
 }))
 
 import { registerQboIpc } from '../src/main/ipc/qbo'
@@ -239,37 +252,42 @@ describe('implemented qbo channels keep both halves of the payload gate', () => 
 // 3. Payload channels: malformed input is refused before any work
 // ---------------------------------------------------------------------------
 
+// The recon group is implemented, so its gate is asserted against a RESOLVED value rather than
+// against the stub copy. The full behaviour lives in test/recon-ipc.test.ts; what stays here is the
+// seam-level property the registration list exists for: the payload gate runs, and it runs first.
 describe('recon:match payload gate', () => {
   it('accepts a well-formed hash list', async () => {
-    const err = await rejection(Channels.reconMatch, { fileHashes: [HASH_A, HASH_B] })
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    await expect(
+      handlerFor(Channels.reconMatch)(FAKE_EVENT, { fileHashes: [HASH_A, HASH_B] })
+    ).resolves.toEqual({ matches: {} })
   })
 
   it('accepts an empty hash list (a scan with nothing loaded is not an error)', async () => {
-    const err = await rejection(Channels.reconMatch, { fileHashes: [] })
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    await expect(
+      handlerFor(Channels.reconMatch)(FAKE_EVENT, { fileHashes: [] })
+    ).resolves.toEqual({ matches: {} })
   })
 
   it('rejects a hash that is not 64 chars', async () => {
-    const err = await rejection(Channels.reconMatch, { fileHashes: ['too-short'] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(await rejection(Channels.reconMatch, { fileHashes: ['too-short'] })).toBeTruthy()
   })
 
   it('rejects a missing fileHashes field', async () => {
-    const err = await rejection(Channels.reconMatch, {})
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(await rejection(Channels.reconMatch, {})).toBeTruthy()
   })
 
   it('rejects parsed vendor text smuggled in place of hashes', async () => {
     // Hashes ONLY. The parsed text lives main-side; accepting it here would let the renderer
     // steer a match against text the parser never produced.
-    const err = await rejection(Channels.reconMatch, { fileHashes: ['Home Depot'] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(await rejection(Channels.reconMatch, { fileHashes: ['Home Depot'] })).toBeTruthy()
   })
 
   it('rejects the bare array shape (the preload wraps it in { fileHashes })', async () => {
-    const err = await rejection(Channels.reconMatch, [HASH_A])
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(await rejection(Channels.reconMatch, [HASH_A])).toBeTruthy()
+  })
+
+  it('rejects the zero-arity call (this channel needs a payload)', async () => {
+    expect(await rejection(Channels.reconMatch, undefined)).toBeTruthy()
   })
 })
 
@@ -365,10 +383,9 @@ describe('posting:batch-detail and posting:summary payload gates', () => {
 // ---------------------------------------------------------------------------
 
 describe('stubs reject with mapped copy, never a code or raw error text', () => {
-  // The qbo entries are gone from this list because QBO-CONNECT replaced those bodies. Each
-  // remaining group drops its own rows here as it lands.
+  // The qbo and recon entries are gone from this list because QBO-CONNECT and RECON replaced those
+  // bodies. Each remaining group drops its own rows here as it lands.
   const everyStub: Array<[string, unknown]> = [
-    [Channels.reconMatch, { fileHashes: [HASH_A] }],
     [Channels.postingSend, { rows: [VALID_ROW] }],
     [Channels.postingBatches, undefined],
     [Channels.postingBatchDetail, { batchId: 'b1' }],
