@@ -19,6 +19,7 @@
 
 import type {
   QboReference,
+  QboRefRecord,
   QboStatus,
   QboSyncResult
 } from '../../shared/ipc-contract'
@@ -37,6 +38,7 @@ import { QBO_NOT_CONNECTED } from './errors'
 import { connectToQuickBooks, type OAuthDeps } from './oauth'
 import {
   clearReference,
+  createVendorRecord,
   readReference,
   syncReference as syncReferenceRows,
   type SyncReferenceDeps
@@ -106,6 +108,27 @@ export async function syncReference(deps: QboServiceDeps = {}): Promise<QboSyncR
 /** Read the cache. Never touches the network, so this works offline and never blocks the grid. */
 export function getReference(deps: QboServiceDeps = {}): QboReference {
   return readReference(getRealmId(deps), getLastSyncAt(deps), deps.db)
+}
+
+/**
+ * Create ONE vendor in the connected company, on an explicit user request.
+ *
+ * This is the only write this app makes outside posting, and it exists for exactly one situation:
+ * the document names a supplier the company has never billed with. Reconciliation is forbidden from
+ * creating anything (RECON-03), so without this the user's only route would be to leave the app,
+ * add the vendor in QuickBooks, sync, and come back. The trade is deliberate and narrow: one
+ * vendor, one name, one click, and never as a side effect of matching.
+ *
+ * lastSyncAt is NOT touched. A single create is not a sync, and claiming one would tell the user
+ * their whole chart of accounts is fresher than it is.
+ */
+export async function createVendor(
+  displayName: string,
+  deps: QboServiceDeps = {}
+): Promise<QboRefRecord> {
+  const realmId = getRealmId(deps)
+  if (!realmId) throw new Error(QBO_NOT_CONNECTED)
+  return await createVendorRecord(realmId, displayName, deps)
 }
 
 /**

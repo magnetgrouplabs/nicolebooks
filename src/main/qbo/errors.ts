@@ -59,3 +59,12 @@ export const QBO_REQUEST_FAILED = 'QBO_REQUEST_FAILED'
 
 /** A reference sync could not complete, so the cache was left as it was. */
 export const QBO_SYNC_FAILED = 'QBO_SYNC_FAILED'
+
+/**
+ * A vendor create collided with a DisplayName that already exists (Intuit fault 6240).
+ *
+ * It is its own code rather than a generic request failure because the user's next move is
+ * different: the vendor they wanted is already in the list, so the answer is to pick it, not to
+ * retry. Everything else Intuit rejects stays generic, because its fault text is not safe to read.
+ */
+export const QBO_VENDOR_DUPLICATE_NAME = 'QBO_VENDOR_DUPLICATE_NAME'

@@ -24,9 +24,10 @@
 // Intuit response body (which carries the request URL and the realm id) is read only to decide
 // between codes, never forwarded. Nothing here logs.
 
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { companyApiUrl, type QboEnvironment } from './env'
-import { QBO_REQUEST_FAILED } from './errors'
+import { QBO_REQUEST_FAILED, QBO_VENDOR_DUPLICATE_NAME } from './errors'
 import { getAccessToken, refreshTokenSet, type TokenDeps } from './tokens'
 
 /** Injectable dependencies for a signed request (Shared Pattern B). */
@@ -91,6 +92,74 @@ async function requestOrFail(
 ): Promise<Response> {
   try {
     return await doFetch(url, { method: 'GET', headers: authHeaders(accessToken) })
+  } catch {
+    throw new Error(QBO_REQUEST_FAILED)
+  }
+}
+
+/**
+ * Intuit's "Duplicate Name Exists Error" code, returned when a create would collide with an existing
+ * DisplayName. It is the ONE fault this app reads out of a response body, because it is the only one
+ * with a different answer for the user: not "try again", but "the vendor you want is already there,
+ * pick it from the list". Everything else stays generic.
+ */
+const DUPLICATE_NAME_FAULT_CODE = '6240'
+
+/**
+ * Perform one signed POST against the Accounting API, with the same proactive refresh and single
+ * 401 retry as qboGet.
+ *
+ * A `requestid` is always attached. Intuit treats it as an idempotency key on creates: replaying the
+ * same id returns the ORIGINAL response instead of creating a second record, so a retry that crosses
+ * a timeout cannot leave two vendors behind. It is minted per call rather than accepted from a
+ * caller, because the retry inside this function is the only replay it needs to survive.
+ *
+ * ERROR DISCIPLINE. The response body is read ONLY to recognise the duplicate-name fault, and it is
+ * never forwarded: an Intuit fault message embeds the request URL, which embeds the realm id.
+ */
+export async function qboPost(
+  realmId: string,
+  path: string,
+  body: unknown,
+  deps: QboClientDeps = {}
+): Promise<unknown> {
+  const doFetch = deps.fetch ?? globalThis.fetch
+  const url = companyApiUrl(realmId, path, { requestid: randomUUID() }, deps.environment)
+  const payload = JSON.stringify(body)
+
+  let accessToken = await getAccessToken(deps)
+  let response = await postOrFail(doFetch, url, accessToken, payload)
+
+  if (response.status === 401) {
+    accessToken = (await refreshTokenSet(deps)).accessToken
+    response = await postOrFail(doFetch, url, accessToken, payload)
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    if (text.includes(DUPLICATE_NAME_FAULT_CODE)) throw new Error(QBO_VENDOR_DUPLICATE_NAME)
+    throw new Error(QBO_REQUEST_FAILED)
+  }
+
+  try {
+    return await response.json()
+  } catch {
+    throw new Error(QBO_REQUEST_FAILED)
+  }
+}
+
+async function postOrFail(
+  doFetch: typeof globalThis.fetch,
+  url: string,
+  accessToken: string,
+  payload: string
+): Promise<Response> {
+  try {
+    return await doFetch(url, {
+      method: 'POST',
+      headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' },
+      body: payload
+    })
   } catch {
     throw new Error(QBO_REQUEST_FAILED)
   }

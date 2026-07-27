@@ -37,7 +37,8 @@ import type Database from 'better-sqlite3'
 import { z } from 'zod'
 import type { QboReference, QboRefAccount, QboRefRecord, QboSyncResult } from '../../shared/ipc-contract'
 import { getDatabase } from '../db/connection'
-import { qboQueryAll, type QboClientDeps } from './client'
+import { qboPost, qboQueryAll, type QboClientDeps } from './client'
+import { QBO_REQUEST_FAILED } from './errors'
 
 /** The three kinds stored in qbo_reference. Part of the primary key (see the migration header). */
 export type QboEntityKind = 'vendor' | 'account' | 'item'
@@ -130,6 +131,9 @@ const SELECT_SQL =
   'SELECT * FROM qbo_reference WHERE realm_id = ? AND entity_kind = ? ORDER BY name COLLATE NOCASE'
 
 const DELETE_REALM_SQL = 'DELETE FROM qbo_reference WHERE realm_id = ?'
+
+const LOOKUP_SQL =
+  'SELECT name, account_type FROM qbo_reference WHERE realm_id = ? AND entity_kind = ? AND entity_id = ?'
 
 /** Injectable dependencies for a sync (Shared Pattern B): network, clock, and database. */
 export interface SyncReferenceDeps extends QboClientDeps {
@@ -334,4 +338,74 @@ export function readReference(
 /** Drop every cached row for one realm. Called on disconnect so no company's data outlives it. */
 export function clearReference(realmId: string, db: Database.Database = getDatabase()): void {
   db.prepare(DELETE_REALM_SQL).run(realmId)
+}
+
+/** One cached record resolved by id: what it is called, and (for accounts) what kind it is. */
+export interface QboReferenceLookup {
+  name: string
+  accountType: string | null
+}
+
+/**
+ * Resolve ONE cached record by id, INCLUDING an inactive one.
+ *
+ * Inactive rows are deliberately in scope. The two callers are the posting report (which prints the
+ * name a posted entry was filed under) and the Purchase payment-type decision, and both are asking
+ * about a record that has ALREADY been chosen. A vendor deactivated in QuickBooks after a bill was
+ * entered against it still has to render its name on that bill's receipt; filtering it out here
+ * would silently degrade a months-old report to a bare id.
+ */
+export function lookupReferenceRecord(
+  realmId: string,
+  kind: QboEntityKind,
+  entityId: string,
+  db: Database.Database = getDatabase()
+): QboReferenceLookup | null {
+  const row = db.prepare(LOOKUP_SQL).get(realmId, kind, entityId) as
+    | { name: string; account_type: string | null }
+    | undefined
+  if (!row) return null
+  return { name: row.name, accountType: row.account_type }
+}
+
+/**
+ * Create a vendor in the connected company and cache the record it returns.
+ *
+ * ONLY reached from an explicit user click on the review screen (RECON-03: reconciliation itself
+ * never creates anything). The cache is written from the RESPONSE rather than from the name that was
+ * typed, because QuickBooks is the authority on the id and on what the DisplayName ended up as.
+ *
+ * The row is upserted immediately rather than waiting for the next full sync, so the vendor the user
+ * just created is selectable in the same breath. `synced_at` records this write, which is honest: the
+ * row IS current as of now, and the next sync will simply confirm it.
+ *
+ * A duplicate name is Intuit's error 6240 and is mapped to its own code by qboPost, so the caller can
+ * say "pick it from the list instead" rather than "something went wrong".
+ */
+export async function createVendorRecord(
+  realmId: string,
+  displayName: string,
+  deps: SyncReferenceDeps = {}
+): Promise<QboRefRecord> {
+  const body = await qboPost(realmId, 'vendor', { DisplayName: displayName }, deps)
+  const parsed = z.looseObject({ Vendor: VendorSchema }).safeParse(body)
+  if (!parsed.success) throw new Error(QBO_REQUEST_FAILED)
+
+  const row = toVendorRow(parsed.data.Vendor)
+  if (!row) throw new Error(QBO_REQUEST_FAILED)
+
+  const db = deps.db ?? getDatabase()
+  const syncedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  db.prepare(UPSERT_SQL).run({
+    realm_id: realmId,
+    entity_kind: row.entityKind,
+    entity_id: row.entityId,
+    name: row.name,
+    active: row.active ? 1 : 0,
+    account_type: null,
+    account_sub_type: null,
+    synced_at: syncedAt
+  })
+
+  return { id: row.entityId, name: row.name, active: row.active }
 }
