@@ -46,6 +46,7 @@ import {
   seedRows,
   sendConfirmBody,
   sendGate,
+  untickConfirmedRows,
   type ReviewEdit,
   type ReviewRow
 } from './model'
@@ -555,6 +556,10 @@ export function ReviewTable({
   // reject a batch that is definitely somebody else's.
   const batchRef = useRef<string | null>(null)
   const sendingRef = useRef(false)
+  // The same per-row states the render reads, mirrored so the subscription can act on them without
+  // doing work inside a setState updater (React may run an updater twice, and "untick this row"
+  // does not belong in something that can be replayed).
+  const sendStatesRef = useRef<Record<string, PostingEntryState>>({})
 
   const seeds = useMemo(
     () => applyMatches(seedRows(files, batchEntryDate, parseResults), matches),
@@ -567,6 +572,11 @@ export function ReviewTable({
 
   const editRow = useCallback((fileHash: string, patch: ReviewEdit): void => {
     setEdits((prev) => ({ ...prev, [fileHash]: { ...prev[fileHash], ...patch } }))
+  }, [])
+
+  /** Untick every row QuickBooks confirmed, so a second Send can only re-send the failures. */
+  const untickConfirmed = useCallback((states: Readonly<Record<string, PostingEntryState>>): void => {
+    setEdits((prev) => untickConfirmedRows(prev, states))
   }, [])
 
   // The QuickBooks reference lists. A rejection is NOT an error wall: it means the app is not
@@ -650,7 +660,8 @@ export function ReviewTable({
       setProgress(next)
       if (next.current !== null) {
         const { fileHash, state } = next.current
-        setSendStates((prev) => ({ ...prev, [fileHash]: state }))
+        sendStatesRef.current = { ...sendStatesRef.current, [fileHash]: state }
+        setSendStates(sendStatesRef.current)
         return
       }
       if (next.done < next.total) return
@@ -658,6 +669,11 @@ export function ReviewTable({
       sendingRef.current = false
       setSending(false)
       setSettled(true)
+      // A row that is now IN QuickBooks unticks itself. What is left ticked is exactly what did not
+      // go in, so pressing Send again re-sends the failures and nothing else. Leaving them ticked
+      // would offer a second send of entries that already exist; main's ledger guard would refuse
+      // each one, but the honest place to prevent it is the box the user is looking at.
+      untickConfirmed(sendStatesRef.current)
       if (batchId === null) return
       void (async () => {
         try {
@@ -668,20 +684,25 @@ export function ReviewTable({
             states[entry.fileHash] = entry.state
             errors[entry.fileHash] = entry.error
           }
+          sendStatesRef.current = states
           setSendStates(states)
           setSendErrors(errors)
+          // Again, from the authoritative read: the stream reports what was ATTEMPTED, batch-detail
+          // reports what QuickBooks CONFIRMED, and only the second is allowed to untick a row.
+          untickConfirmed(states)
         } catch {
           // The states streamed on the broadcast are already on screen; failing to refine them is
           // not worth an error the user cannot act on.
         }
       })()
     })
-  }, [])
+  }, [untickConfirmed])
 
   async function runSend(): Promise<void> {
     // Set BEFORE the await: the first progress events can beat the send promise back.
     sendingRef.current = true
     batchRef.current = null
+    sendStatesRef.current = {}
     setSending(true)
     setSendError(null)
     setSettled(false)
@@ -701,11 +722,10 @@ export function ReviewTable({
     batchRef.current = outcome.batchId
     // Seed every row that actually went as Waiting, WITHOUT overwriting a state the broadcast has
     // already reported for it (the race above means some rows may already read Sending or Entered).
-    setSendStates((prev) => {
-      const next = { ...prev }
-      for (const row of outcome.sent) next[row.fileHash] ??= 'pending'
-      return next
-    })
+    const seeded = { ...sendStatesRef.current }
+    for (const sent of outcome.sent) seeded[sent.fileHash] ??= 'pending'
+    sendStatesRef.current = seeded
+    setSendStates(seeded)
     setConfirming(false)
   }
 

@@ -43,6 +43,7 @@ import {
   sendConfirmBody,
   sendGate,
   toPostingRows,
+  untickConfirmedRows,
   type ReviewEdit,
   type ReviewSeed
 } from '../src/renderer/src/review/model'
@@ -610,6 +611,49 @@ describe('toPostingRows builds exactly what posting:send accepts', () => {
   it('never emits an incomplete row, even if a caller skipped the gate', () => {
     expect(toPostingRows([row({ vendorId: null })])).toHaveLength(0)
     expect(toPostingRows([row({}, { amountText: '' })])).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// After a batch settles
+// ---------------------------------------------------------------------------
+
+describe('a confirmed row unticks itself, so a second Send re-sends only the failures', () => {
+  it('unticks what went in and leaves what did not', () => {
+    const edits = untickConfirmedRows({}, { [HASH_A]: 'confirmed', [HASH_B]: 'failed' })
+    const rows = [
+      resolveRow(readySeed(), edits[HASH_A]),
+      resolveRow(readySeed({ fileHash: HASH_B }), edits[HASH_B])
+    ]
+    expect(rows[0].included).toBe(false)
+    expect(rows[1].included).toBe(true)
+    expect(toPostingRows(rows).map((posting) => posting.fileHash)).toEqual([HASH_B])
+  })
+
+  it('leaves a row whose outcome is UNKNOWN ticked', () => {
+    // 'sent' means the request went out and the answer never came. Unticking it would tell the user
+    // it is in QuickBooks, which is the one thing nobody knows yet.
+    const edits = untickConfirmedRows({}, { [HASH_A]: 'sent', [HASH_B]: 'pending' })
+    expect(edits).toEqual({})
+  })
+
+  it('keeps every other edit the user made', () => {
+    const before = { [HASH_A]: { vendorId: '99', amountText: '20.00' } }
+    const after = untickConfirmedRows(before, { [HASH_A]: 'confirmed' })
+    expect(after[HASH_A]).toEqual({ vendorId: '99', amountText: '20.00', included: false })
+  })
+
+  it('does not mutate the edits it was given', () => {
+    const before = { [HASH_A]: { vendorId: '99' } }
+    untickConfirmedRows(before, { [HASH_A]: 'confirmed' })
+    expect(before).toEqual({ [HASH_A]: { vendorId: '99' } })
+  })
+
+  it('leaves the batch unsendable when everything went in', () => {
+    const edits = untickConfirmedRows({}, { [HASH_A]: 'confirmed' })
+    const gate = sendGate([resolveRow(readySeed(), edits[HASH_A])])
+    expect(gate.canSend).toBe(false)
+    expect(gate.reason).toBe('Tick at least one bill to send it to QuickBooks.')
   })
 })
 

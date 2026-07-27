@@ -35,6 +35,7 @@ import type {
   MatchConfidence,
   ParseFileResult,
   ParsedFields,
+  PostingEntryState,
   PostingEntryType,
   PostingRow,
   ScanFile,
@@ -480,6 +481,31 @@ export function needsAttention(row: ReviewRow, duplicateCount = 0): boolean {
   if (row.included && !isRowComplete(row)) return true
   if (duplicateCount > 0) return true
   return false
+}
+
+/**
+ * Untick every row QuickBooks CONFIRMED, leaving exactly the failures ticked.
+ *
+ * A batch where three of five went in leaves the user in a specific place: two entries still need
+ * sending and three are already in the books. Leaving all five ticked would offer a second send of
+ * entries that already exist. Main's ledger guard would refuse each of those (POSTING_ALREADY_
+ * ENTERED), so nothing would double-post, but the honest place to prevent it is the box the user is
+ * looking at, not an error they meet afterwards.
+ *
+ * Only 'confirmed' unticks. A row that is 'sent' but not confirmed is one whose outcome is not
+ * known, and unticking it would tell the user it is in QuickBooks when the whole point of keeping
+ * those states separate is that nobody knows yet.
+ */
+export function untickConfirmedRows(
+  edits: Readonly<Record<string, ReviewEdit>>,
+  states: Readonly<Record<string, PostingEntryState>>
+): Record<string, ReviewEdit> {
+  const next = { ...edits }
+  for (const [fileHash, state] of Object.entries(states)) {
+    if (state !== 'confirmed') continue
+    next[fileHash] = { ...next[fileHash], included: false }
+  }
+  return next
 }
 
 /** The rows the "needs attention" filter keeps. */
