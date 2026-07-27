@@ -26,6 +26,16 @@
 // electron is mocked so ipcMain.handle registrations are captured instead of touching a real IPC
 // bus (the test/ingestion-ipc-scan.test.ts pattern), and trusted-sender is a no-op so this targets
 // the PAYLOAD gate rather than the sender gate (e2e/ipc-boundary.spec.ts covers the latter).
+//
+// AS EACH GROUP LANDS, ITS STUB ASSERTIONS CHANGE SHAPE. A handler with a real body no longer
+// answers NOT_IMPLEMENTED, so "rejected with the stub copy" stops being the marker for "the gate
+// let this through". The rules that survive for a landed group are the ones that were always the
+// point: the channel is registered, a payload-free channel accepts the zero-arity call, a
+// malformed payload dies at the gate, and NOTHING that comes back carries raw error text or an
+// internal code. See gatePassed() below.
+//
+// POSTING has landed (POSTING-ENGINE). Its full behaviour is covered by test/posting-ipc.test.ts;
+// what stays here is the seam contract every group shares.
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -119,6 +129,24 @@ async function rejection(channel: string, raw?: unknown): Promise<unknown> {
   }
 }
 
+/**
+ * Did the payload gate ACCEPT this input?
+ *
+ * For a stub the answer is "it rejected with the stub copy". For a landed group the handler runs
+ * its real body, which in this spec has no database and no QuickBooks connection behind it, so it
+ * rejects with its own MAPPED copy instead. Either way the distinguishing fact is the same: a
+ * rejection from Zod names the field it refused, and a mapped rejection never does.
+ *
+ * This is deliberately a negative test on Zod's vocabulary rather than a positive one on a copy
+ * table, so a group can add a sentence without editing this file.
+ */
+function gatePassed(err: unknown): boolean {
+  if (err === null) return true
+  const message = err instanceof Error ? err.message : String(err)
+  if (message === NOT_IMPLEMENTED_COPY) return true
+  return !/invalid|expected|required|too_small|too_big|unrecognized/i.test(message)
+}
+
 /** A well-formed SHA-256 hex hash. */
 const HASH_A = 'a'.repeat(64)
 const HASH_B = 'b'.repeat(64)
@@ -187,24 +215,22 @@ describe('payload-free channels gate correctly', () => {
   ]
 
   // The zero-arity preload call sends undefined. A handler that parsed a bare `raw` would fail
-  // here with a Zod 'expected object, received undefined' message rather than the stub copy --
-  // that is the ingestion:scan defect, caught at the seam instead of a phase later.
+  // here with a Zod 'expected object, received undefined' message -- that is the ingestion:scan
+  // defect, caught at the seam instead of a phase later.
   it.each(payloadFree)('%s accepts the zero-arity preload call (raw === undefined)', async (channel) => {
-    const err = await rejection(channel, undefined)
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, undefined))).toBe(true)
   })
 
   it.each(payloadFree)('%s accepts an explicit empty object', async (channel) => {
-    const err = await rejection(channel, {})
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, {}))).toBe(true)
   })
 
   // A smuggled payload must die at the strict-empty gate, so the failure text is Zod's, not the
-  // stub's. When a real body replaces the stub this assertion keeps meaning "the gate ran first".
+  // handler's. This keeps meaning "the gate ran first" once a real body replaces the stub.
   it.each(payloadFree)('%s rejects a smuggled non-empty payload at the gate', async (channel) => {
     const err = await rejection(channel, { realmId: '9341457604445280', force: true })
     expect(err).toBeTruthy()
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 })
 
@@ -275,59 +301,55 @@ describe('recon:match payload gate', () => {
 
 describe('posting:send payload gate', () => {
   it('accepts a well-formed bill row', async () => {
-    const err = await rejection(Channels.postingSend, { rows: [VALID_ROW] })
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(Channels.postingSend, { rows: [VALID_ROW] }))).toBe(true)
   })
 
   it('accepts a well-formed expense row that names what paid it', async () => {
     const row = { ...VALID_ROW, entryType: 'expense' as const, paidFromAccountId: '35', dueDate: null }
-    const err = await rejection(Channels.postingSend, { rows: [row] })
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(Channels.postingSend, { rows: [row] }))).toBe(true)
   })
 
   it('rejects an empty batch', async () => {
-    const err = await rejection(Channels.postingSend, { rows: [] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(Channels.postingSend, { rows: [] }))).toBe(false)
   })
 
   it('rejects a float amount (money is integer cents end to end)', async () => {
     const err = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, amountCents: 123.45 }] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 
   it('rejects a zero or negative amount', async () => {
     const zero = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, amountCents: 0 }] })
     const negative = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, amountCents: -500 }] })
-    expect((zero as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
-    expect((negative as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(zero)).toBe(false)
+    expect(gatePassed(negative)).toBe(false)
   })
 
   it('rejects a non-ISO transaction date', async () => {
     const err = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, txnDate: '07/27/2026' }] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 
   it('rejects a hash that is not 64 chars', async () => {
     const err = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, fileHash: 'nope' }] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 
   it('rejects an unknown entry type', async () => {
     const err = await rejection(Channels.postingSend, { rows: [{ ...VALID_ROW, entryType: 'journal' }] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 
   it('rejects a refNumber over the QuickBooks DocNumber limit of 21', async () => {
     const err = await rejection(Channels.postingSend, {
       rows: [{ ...VALID_ROW, refNumber: 'X'.repeat(22) }]
     })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(err)).toBe(false)
   })
 
   it('rejects a missing required field', async () => {
     const { vendorId: _dropped, ...withoutVendor } = VALID_ROW
-    const err = await rejection(Channels.postingSend, { rows: [withoutVendor] })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(Channels.postingSend, { rows: [withoutVendor] }))).toBe(false)
   })
 })
 
@@ -335,28 +357,23 @@ describe('posting:batch-detail and posting:summary payload gates', () => {
   const withBatchId = [Channels.postingBatchDetail, Channels.postingSummary]
 
   it.each(withBatchId)('%s accepts a well-formed batch id', async (channel) => {
-    const err = await rejection(channel, { batchId: 'batch-2026-07-27-01' })
-    expect((err as Error).message).toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, { batchId: 'batch-2026-07-27-01' }))).toBe(true)
   })
 
   it.each(withBatchId)('%s rejects an empty batch id', async (channel) => {
-    const err = await rejection(channel, { batchId: '' })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, { batchId: '' }))).toBe(false)
   })
 
   it.each(withBatchId)('%s rejects a missing batch id', async (channel) => {
-    const err = await rejection(channel, {})
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, {}))).toBe(false)
   })
 
   it.each(withBatchId)('%s rejects a non-string batch id', async (channel) => {
-    const err = await rejection(channel, { batchId: 7 })
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, { batchId: 7 }))).toBe(false)
   })
 
   it.each(withBatchId)('%s rejects the zero-arity call (this channel needs a payload)', async (channel) => {
-    const err = await rejection(channel, undefined)
-    expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+    expect(gatePassed(await rejection(channel, undefined))).toBe(false)
   })
 })
 
@@ -365,16 +382,12 @@ describe('posting:batch-detail and posting:summary payload gates', () => {
 // ---------------------------------------------------------------------------
 
 describe('stubs reject with mapped copy, never a code or raw error text', () => {
-  // The qbo entries are gone from this list because QBO-CONNECT replaced those bodies. Each
-  // remaining group drops its own rows here as it lands.
+  // Channels whose bodies have NOT landed yet. qbo (QBO-CONNECT), upload + ingestion:pick-files
+  // (INGEST-UX), and posting (POSTING-ENGINE) have all landed; their error mapping is pinned in
+  // their own specs (test/qbo-*.test.ts, test/upload-ipc.test.ts, test/posting-ipc.test.ts).
+  // Only recon remains a stub.
   const everyStub: Array<[string, unknown]> = [
-    [Channels.reconMatch, { fileHashes: [HASH_A] }],
-    [Channels.postingSend, { rows: [VALID_ROW] }],
-    [Channels.postingBatches, undefined],
-    [Channels.postingBatchDetail, { batchId: 'b1' }],
-    [Channels.postingUndoLast, undefined],
-    [Channels.postingSummary, { batchId: 'b1' }]
-    // The upload group is implemented; its error mapping is pinned in test/upload-ipc.test.ts.
+    [Channels.reconMatch, { fileHashes: [HASH_A] }]
   ]
 
   it.each(everyStub)('%s rejects with the NOT_IMPLEMENTED user copy', async (channel, raw) => {
@@ -391,5 +404,36 @@ describe('stubs reject with mapped copy, never a code or raw error text', () => 
 
   it('uses copy free of em dashes and en dashes (house rule for user-facing text)', () => {
     expect(NOT_IMPLEMENTED_COPY).not.toMatch(/[–—]/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5. Landed groups: the same no-raw-error-text discipline, against a real body
+// ---------------------------------------------------------------------------
+
+describe('landed handlers never leak a code, a stack, or provider text', () => {
+  // This spec provides no database and no QuickBooks connection, so every posting handler takes
+  // its failure path. That is the interesting path: it is the one that runs when something goes
+  // wrong on a user's machine, and it is where an unmapped error would escape.
+  const landed: Array<[string, unknown]> = [
+    [Channels.postingSend, { rows: [VALID_ROW] }],
+    [Channels.postingBatches, undefined],
+    [Channels.postingBatchDetail, { batchId: 'b1' }],
+    [Channels.postingUndoLast, undefined],
+    [Channels.postingSummary, { batchId: 'b1' }]
+  ]
+
+  it.each(landed)('%s rejects with a plain sentence', async (channel, raw) => {
+    const err = await rejection(channel as string, raw)
+    expect(err).toBeInstanceOf(Error)
+    const message = (err as Error).message
+    expect(message.length).toBeGreaterThan(0)
+    // No internal code, no stack frame, no path, no dashes.
+    expect(message).not.toContain('POSTING_')
+    expect(message).not.toContain('    at ')
+    expect(message).not.toMatch(/[–—]/)
+    expect(message).not.toMatch(/[A-Za-z]:\\|\/Users\//)
+    // It ends in a full stop, because it is a sentence shown to a person.
+    expect(message.trim().endsWith('.')).toBe(true)
   })
 })

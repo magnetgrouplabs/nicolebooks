@@ -5,23 +5,26 @@
 // :memory:) so the persistence-across-reopen behavior is genuinely exercised.
 //
 // Behaviors covered:
-//   1. a fresh database reports user_version 0, and after migrate() it reports 4 (Phase 1's
-//      migration0001, Phase 2's migration0002, Phase 3's migration0003 and the finish sprint's
-//      migration0004 all apply)
+//   1. a fresh database reports user_version 0, and after migrate() it reports LATEST_VERSION
 //   2. after migrate() the app_settings table exists with columns key and value
 //   3. running migrate() a second time is a no-op and does not throw (idempotent)
-//   4. the table set is exactly ['app_settings', 'posted_file_hashes', 'parsed_results',
-//      'qbo_reference'] — per D-15 each feature table is added by its owning phase's migration;
-//      Phase 2 owns the dedupe ledger posted_file_hashes (migration0002), Phase 3 owns the
-//      parsed-results cache (migration0003), and the finish sprint's QBO-CONNECT owns the
-//      QuickBooks reference cache (migration0004)
+//   4. the shipped feature tables are all present — per D-15 each feature table is added by its
+//      owning phase's migration; Phase 2 owns the dedupe ledger posted_file_hashes
+//      (migration0002) and Phase 3 owns the parsed-results cache (migration0003)
+//
+// FINISH SPRINT: the version and table assertions were EXACT constants until 0004 (QBO-CONNECT)
+// and 0005 (POSTING-ENGINE) started landing from parallel worktrees. Pinning "user_version is 3"
+// and "the table set is exactly these three" would have made every downstream migration a
+// merge-conflict in this file, for no coverage: what these assertions are actually for is that
+// the runner APPLIES what it is given and stays idempotent. The per-migration structure is pinned
+// by the owning phase's own spec (see test/posting-migration.test.ts).
 //   5. posted_file_hashes exposes the dedupe-ledger columns
 //   6. parsed_results exposes the 21 D-24 columns, is STRICT, declares no BOOLEAN column
 //      (RESEARCH Pitfall 8), and keys on file_hash (the Phase 2 SHA-256, D-14)
 //   6b. qbo_reference is STRICT, keys on (realm_id, entity_kind, entity_id) so one company's
 //      reference data can never overwrite another's and a Vendor id cannot collide with an Item
 //      id, and stores its active flag as an INTEGER (migration0004)
-//   7. an EXISTING database already at user_version 2 upgrades forward to 4 without losing
+//   7. an EXISTING database already at user_version 2 upgrades forward without losing
 //      its Phase 1/2 data — the forward-only ratchet applied to a real upgrade, not just to
 //      a fresh install
 //   8. a value written to app_settings survives closing and reopening the same file
@@ -34,7 +37,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
-import { migrate } from '../src/main/db/migrate'
+import { LATEST_VERSION, migrate } from '../src/main/db/migrate'
 import { migration0001 } from '../src/main/db/migrations/0001_init'
 import { migration0002 } from '../src/main/db/migrations/0002_dedupe'
 
@@ -100,13 +103,12 @@ const PARSED_RESULTS_COLUMNS = [
 ]
 
 describe('migrate()', () => {
-  it('advances user_version from 0 to 4 on a fresh database', () => {
+  it('advances user_version from 0 to the latest migration on a fresh database', () => {
     const db = openDb()
     expect(db.pragma('user_version', { simple: true })).toBe(0)
     migrate(db)
-    // migration0001 (app_settings) + migration0002 (posted_file_hashes) +
-    // migration0003 (parsed_results) + migration0004 (qbo_reference) all apply.
-    expect(db.pragma('user_version', { simple: true })).toBe(4)
+    expect(db.pragma('user_version', { simple: true })).toBe(LATEST_VERSION)
+    expect(LATEST_VERSION).toBeGreaterThanOrEqual(3)
     db.close()
   })
 
@@ -123,27 +125,23 @@ describe('migrate()', () => {
     const db = openDb()
     migrate(db)
     expect(() => migrate(db)).not.toThrow()
-    expect(db.pragma('user_version', { simple: true })).toBe(4)
+    expect(db.pragma('user_version', { simple: true })).toBe(LATEST_VERSION)
     db.close()
   })
 
-  it('creates exactly the owning-phase feature tables (D-15): app_settings + posted_file_hashes + parsed_results + qbo_reference', () => {
+  it('creates the owning-phase feature tables (D-15), in migration order', () => {
     // D-15: each feature table is added by its owning phase's migration. Phase 1 owns
     // app_settings (migration0001); Phase 2 owns the dedupe ledger posted_file_hashes
-    // (migration0002); Phase 3 owns the parsed-results cache (migration0003, D-17/D-24);
-    // the finish sprint's QBO-CONNECT owns the reference cache (migration0004).
-    // Order is by creation (migration version order).
+    // (migration0002); Phase 3 owns the parsed-results cache (migration0003, D-17/D-24).
+    // Later phases add their own and assert their own structure in their own spec.
     const db = openDb()
     migrate(db)
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-      .all() as Array<{ name: string }>
-    expect(tables.map((t) => t.name)).toEqual([
-      'app_settings',
-      'posted_file_hashes',
-      'parsed_results',
-      'qbo_reference'
-    ])
+    const tables = (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .all() as Array<{ name: string }>
+    ).map((t) => t.name)
+    expect(tables.slice(0, 3)).toEqual(['app_settings', 'posted_file_hashes', 'parsed_results'])
     db.close()
   })
 
@@ -285,10 +283,17 @@ describe('migrate()', () => {
     db.close()
   })
 
+<<<<<<< HEAD
   it('upgrades an existing database already at user_version 2 forward to 4 without data loss', () => {
     // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
     // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply the
     // pending migrations in order (forward-only ratchet) and leave the existing rows untouched.
+=======
+  it('upgrades an existing database already at user_version 2 forward without data loss', () => {
+    // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
+    // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply every
+    // migration ABOVE 2 (forward-only ratchet) and leave the existing rows untouched.
+>>>>>>> worktree-agent-afedfec54831a4be4
     const first = openDb()
     try {
       migration0001.up(first)
@@ -310,7 +315,11 @@ describe('migrate()', () => {
     try {
       expect(second.pragma('user_version', { simple: true })).toBe(2)
       expect(() => migrate(second)).not.toThrow()
+<<<<<<< HEAD
       expect(second.pragma('user_version', { simple: true })).toBe(4)
+=======
+      expect(second.pragma('user_version', { simple: true })).toBe(LATEST_VERSION)
+>>>>>>> worktree-agent-afedfec54831a4be4
       expect(columnNames(second, 'parsed_results')).toEqual(PARSED_RESULTS_COLUMNS)
 
       // Pre-existing data survived the upgrade.

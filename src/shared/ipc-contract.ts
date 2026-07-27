@@ -465,13 +465,28 @@ export interface PostingProgress {
   current: { fileHash: string; state: PostingEntryState } | null
 }
 
-/** One row of the batch history list. */
+/**
+ * Batch-level lifecycle, for display. 'partially-undone' is its own value rather than a flag
+ * because a batch where three of five entries were reversed is neither "sent" nor "undone", and
+ * showing it as either would misstate what is in the books.
+ */
+export type PostingBatchState = 'open' | 'complete' | 'partially-undone' | 'undone'
+
+/**
+ * One row of the batch history list.
+ *
+ * `undone` counts confirmed entries that were later reversed. It is carried separately from
+ * `confirmed` rather than subtracted from it, because "3 entered, 3 later removed" and "0 entered"
+ * are different facts about the same batch and the history screen has to be able to say which.
+ */
 export interface PostingBatchSummaryRow {
   batchId: string
   createdAt: string // ISO timestamp
   total: number
   confirmed: number
   failed: number
+  undone: number
+  state: PostingBatchState
 }
 
 /** posting:batches result. Newest first. */
@@ -491,6 +506,11 @@ export interface PostingBatchEntry {
   syncToken: string | null
   state: PostingEntryState
   error: string | null
+  // An entry reversed by undo keeps state 'confirmed' (it really was confirmed) and carries the
+  // moment it was reversed. undoReason is the plain-language explanation when an undo was REFUSED,
+  // which is the case the user most needs told: the entity is still in QuickBooks and why.
+  undoneAt: string | null // ISO timestamp
+  undoReason: string | null
 }
 
 /** posting:batch-detail result. */
@@ -508,12 +528,19 @@ export interface PostingUndoResult {
   results: Array<{ qboId: string; undone: boolean; reason: string | null }>
 }
 
-/** One printable line of a batch report. Names are denormalized so the report renders offline. */
+/**
+ * One printable line of a batch report. Names are denormalized so the report renders offline.
+ *
+ * A name that was never resolved falls back to the QuickBooks id rather than to an empty string:
+ * on a printed page a blank cell reads as "no vendor" instead of "the name was not available", and
+ * there is nobody left to ask.
+ */
 export interface PostingSummaryLine {
   fileHash: string
   filename: string
   vendorName: string
   categoryName: string
+  paidFromName: string | null // expenses only; null on a bill
   entryType: PostingEntryType
   txnDate: string
   refNumber: string | null
@@ -521,17 +548,29 @@ export interface PostingSummaryLine {
   state: PostingEntryState
   qboId: string | null
   error: string | null
+  undoneAt: string | null // ISO timestamp when this line was later reversed
 }
 
 /**
  * posting:summary result: everything a printable "what did I just send" report needs, resolved
  * main-side so the renderer never has to re-join ids against the reference cache to print.
+ *
+ * totals.amountCents counts CONFIRMED, NOT-UNDONE lines only. A total that swept in failed rows
+ * would tell the user they entered money they did not enter, on a document that gets filed.
  */
 export interface PostingSummary {
   batchId: string
   createdAt: string
   companyName: string | null
-  totals: { entries: number; confirmed: number; failed: number; amountCents: number }
+  realmId: string // QuickBooks company id (not a credential); identifies WHICH books were touched
+  state: PostingBatchState
+  totals: {
+    entries: number
+    confirmed: number
+    failed: number
+    undone: number
+    amountCents: number
+  }
   lines: PostingSummaryLine[]
 }
 
