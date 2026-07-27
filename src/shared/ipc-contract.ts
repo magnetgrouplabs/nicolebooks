@@ -67,6 +67,10 @@ export const Channels = {
   postingBatchDetail: 'posting:batch-detail',
   postingUndoLast: 'posting:undo-last',
   postingSummary: 'posting:summary',
+  // Added by REVIEW-UI: the review screen's "you may already have entered this" check. It is a
+  // READ, it changes nothing, and it is deliberately separate from the Phase 2 hash dedupe, which
+  // catches the same FILE. This catches the same BILL arriving as different bytes.
+  postingCheckDuplicates: 'posting:check-duplicates',
   // upload channel group plus ingestion:pick-files. Both feed the same managed inbox the Phase 2
   // scan already reads, so the folder becomes an internal detail rather than the primary UX.
   ingestionPickFiles: 'ingestion:pick-files',
@@ -575,6 +579,50 @@ export interface PostingSummary {
 }
 
 /**
+ * One row the review screen wants checked for a prior entry. `rowKey` is opaque to main: it is
+ * echoed back as the key of the warnings map so the renderer can attach each answer to the row
+ * that asked, without main having to know anything about the review grid's identity scheme.
+ *
+ * A probe is only sent once a row has all three fields, so there is no "partial" case to encode.
+ */
+export interface DuplicateProbe {
+  rowKey: string
+  vendorId: string
+  amountCents: number // integer cents, like everywhere else in the chain
+  txnDate: string // ISO 'YYYY-MM-DD'
+}
+
+/**
+ * One prior CONFIRMED entry that looks like the row the user is about to send: same vendor, same
+ * amount, within a few days. Undone entries are excluded, because reversing a batch is exactly how
+ * a user says "that did not happen" and warning about it afterwards trains them to ignore warnings.
+ *
+ * `daysApart` is signed, negative when the prior entry is earlier, so the UI can say how close it
+ * was without doing date math in the renderer.
+ */
+export interface DuplicateWarning {
+  batchId: string
+  fileHash: string
+  filename: string | null
+  entryType: PostingEntryType
+  qboId: string | null
+  vendorId: string
+  vendorName: string | null
+  amountCents: number
+  txnDate: string
+  daysApart: number
+  postedAt: string | null // ISO timestamp from the dedupe ledger, null when it was cleared
+}
+
+/**
+ * posting:check-duplicates result. Keyed by the probe's rowKey. A row with nothing to warn about is
+ * ABSENT from the map rather than present with an empty array, so "is this row clean" is one lookup.
+ */
+export interface PostingDuplicatesResult {
+  warnings: Record<string, DuplicateWarning[]>
+}
+
+/**
  * posting channel group. send hands over the approved rows and returns immediately with a batch id;
  * per-entry outcomes arrive on the posting:progress broadcast and are readable afterwards through
  * batchDetail, so a closed window never loses a batch. onProgress returns an unsubscribe function,
@@ -586,6 +634,9 @@ export interface PostingApi {
   batchDetail(batchId: string): Promise<PostingBatchDetail>
   undoLast(): Promise<PostingUndoResult>
   summary(batchId: string): Promise<PostingSummary>
+  // Read-only, non-blocking: the review screen calls this as rows become complete and renders a
+  // warning the user can ignore. It never refuses a send; the user decides.
+  checkDuplicates(probes: DuplicateProbe[]): Promise<PostingDuplicatesResult>
   onProgress(cb: (progress: PostingProgress) => void): () => void
 }
 

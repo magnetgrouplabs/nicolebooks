@@ -204,6 +204,9 @@ describe('every finish-sprint channel is registered', () => {
     Channels.postingBatchDetail,
     Channels.postingUndoLast,
     Channels.postingSummary,
+    // Added by REVIEW-UI (Fable granted the one new channel). The pin below counts registrations,
+    // so a channel that lands without this line goes red, which is the point of the count.
+    Channels.postingCheckDuplicates,
     Channels.ingestionPickFiles,
     Channels.uploadStart,
     Channels.uploadStop,

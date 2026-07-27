@@ -27,10 +27,15 @@
 // already durable and posting:batch-detail reads the outcome afterwards.
 
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { Channels, type PostingProgress } from '../../shared/ipc-contract'
+import {
+  Channels,
+  type DuplicateWarning,
+  type PostingProgress
+} from '../../shared/ipc-contract'
 import {
   PostingBatchDetailSchema,
   PostingBatchesSchema,
+  PostingCheckDuplicatesSchema,
   PostingSendSchema,
   PostingSummarySchema,
   PostingUndoLastSchema
@@ -39,6 +44,7 @@ import { getDatabase } from '../db/connection'
 import { recoverablePostingReason } from '../posting/errors'
 import { resolveQboApi } from '../posting/qbo-api'
 import { prepareBatch } from '../posting/send'
+import { findPriorConfirmedEntries } from '../posting/store'
 import { batchDetailResult, batchesResult, summaryResult } from '../posting/summary'
 import { undoLastBatch } from '../posting/undo'
 import { assertTrustedSender } from './trusted-sender'
@@ -114,6 +120,30 @@ export function registerPostingIpc(): void {
     const { batchId } = PostingSummarySchema.parse(raw)
     try {
       return summaryResult(getDatabase(), batchId)
+    } catch (err) {
+      throw new Error(recoverablePostingReason(err))
+    }
+  })
+
+  // REVIEW-UI: "you may already have entered this". A pure READ that writes nothing and blocks
+  // nothing; the review screen renders it as a warning the user is free to overrule. A row with no
+  // match is OMITTED from the map rather than given an empty array, so the renderer's "is this row
+  // clean" check is one lookup and an unanswered row and a clean row are not the same thing.
+  ipcMain.handle(Channels.postingCheckDuplicates, (event, raw) => {
+    assertTrustedSender(event)
+    const { probes } = PostingCheckDuplicatesSchema.parse(raw)
+    try {
+      const db = getDatabase()
+      const warnings: Record<string, DuplicateWarning[]> = {}
+      for (const probe of probes) {
+        const found = findPriorConfirmedEntries(db, {
+          vendorId: probe.vendorId,
+          amountCents: probe.amountCents,
+          txnDate: probe.txnDate
+        })
+        if (found.length > 0) warnings[probe.rowKey] = found
+      }
+      return { warnings }
     } catch (err) {
       throw new Error(recoverablePostingReason(err))
     }

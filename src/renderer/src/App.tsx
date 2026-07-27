@@ -16,10 +16,16 @@ import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-function renderContent(active: Destination): React.JSX.Element {
+// Phase 6: the Bills screen can send the user onward once a batch settles, so the strip that says
+// "3 of 5 entered" can point at the receipt instead of describing where to find it. Navigation
+// state stays here, where it already lived; the screen just gets a way to ask.
+function renderContent(
+  active: Destination,
+  onNavigate: (destination: Destination) => void
+): React.JSX.Element {
   switch (active) {
     case 'bills':
-      return <BillsScreen />
+      return <BillsScreen onNavigate={onNavigate} />
     case 'history':
       return <HistoryScreen />
     case 'settings':
@@ -36,7 +42,7 @@ function App(): React.JSX.Element {
         <Header />
         <Sidebar active={active} onSelect={setActive} />
         <main className="col-start-2 row-start-2 overflow-auto bg-background p-6">
-          {renderContent(active)}
+          {renderContent(active, setActive)}
         </main>
       </div>
     </TooltipProvider>
