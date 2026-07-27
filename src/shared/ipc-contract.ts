@@ -10,10 +10,11 @@
 // Electron/Node import here would break the sandboxed preload bundle.
 
 /**
- * The exact channel-name constants for every IPC channel. Three groups only:
- * settings (get/set), secrets (set/get/delete), and theme (get plus the main-to-renderer
- * broadcast theme:changed). Downstream plans (01-05 handlers, 01-06 renderer) import
- * these verbatim so a rename cannot silently desync the two sides of the boundary.
+ * The exact channel-name constants for every IPC channel, grouped by feature: settings
+ * (get/set), secrets (set/get/delete), theme (get plus the main-to-renderer broadcast
+ * theme:changed), ingestion (Phase 2), and ai + parse (Phase 3). Handlers and the preload
+ * import these verbatim so a rename cannot silently desync the two sides of the boundary;
+ * test/ipc-contract.test.ts pins every value.
  */
 export const Channels = {
   settingsGet: 'settings:get',
@@ -27,7 +28,18 @@ export const Channels = {
   // run a read-only scan. All fs/hash/db work runs main-side behind the Phase 1 trust boundary.
   ingestionResolveInbox: 'ingestion:resolve-inbox',
   ingestionChooseInbox: 'ingestion:choose-inbox',
-  ingestionScan: 'ingestion:scan'
+  ingestionScan: 'ingestion:scan',
+  // ai channel group (Phase 3, plan 03-01): connection test, live model list, and persistence of
+  // the selected (non-secret) model id. The API key and base URL NEVER travel on these channels —
+  // they are read main-side from the Phase 1 secret store (D-05/D-16).
+  aiTestConnection: 'ai:test-connection',
+  aiListModels: 'ai:list-models',
+  aiSetModel: 'ai:set-model',
+  // parse channel group (Phase 3, plan 03-01): batch parse of the loaded scan output, a single-file
+  // re-parse override (D-14), and the main->renderer progress broadcast (D-26).
+  parseBatch: 'parse:parse-batch',
+  parseReparse: 'parse:reparse',
+  parseProgress: 'parse:progress' // main->renderer broadcast (mirrors themeChanged)
 } as const
 
 /** Union of every valid channel-name string. */
@@ -110,6 +122,120 @@ export interface IngestionApi {
   scan(): Promise<ScanResult>
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3 — ai + parse (plan 03-01)
+//
+// SECRET BOUNDARY (D-05/D-16): NOTHING below carries the AI API key or the base URL. Both are
+// stored in the OS keychain via the Phase 1 secrets channel and read main-side when the client is
+// built; the only AI configuration that crosses this boundary is the non-secret model id, plus
+// result objects. A field carrying the credential or the endpoint URL would be a contract
+// violation (threat T-03-01); the parse cache stores base_url_host (host only), never a secret.
+// ---------------------------------------------------------------------------
+
+/**
+ * One model returned by the endpoint's /models, after vision classification (D-01/D-02).
+ * `vision` records HOW it was classified, because the UI treats the three cases differently:
+ *   'vision'        — the endpoint's own metadata says so (OpenRouter architecture.input_modalities
+ *                     contains 'image'); badge it confidently.
+ *   'vision-family' — no metadata, but the id matches the curated vision-family list; badge it.
+ *   'unknown'       — unclassifiable; stays unbadged and hits the D-01 "use anyway" confirm gate.
+ * The rich OpenRouter-only fields are all optional so OpenAI's minimal { id, object, created,
+ * owned_by } shape degrades gracefully (RESEARCH Directive 6a).
+ */
+export interface ModelInfo {
+  id: string
+  label?: string
+  vision: 'vision' | 'vision-family' | 'unknown'
+  inputModalities?: string[]
+  supportedParameters?: string[]
+  contextLength?: number
+}
+
+/**
+ * The validated field set for one bill, after the Zod deterministic gate (D-10) has coerced money
+ * to integer cents and normalized dates to ISO. Mirrors the parsed_results columns (D-24). Only
+ * `vendor` and `totalCents` are non-null-required — every optional is genuinely nullable, because
+ * forcing fields required is a top cause of hallucinated fills (D-09).
+ */
+export interface ParsedFields {
+  vendor: string
+  invoiceNumber: string | null
+  invoiceDate: string | null // ISO 'YYYY-MM-DD' after normalize
+  dueDate: string | null
+  subtotalCents: number | null // integer cents, never a float (RESEARCH Pitfall 4)
+  taxCents: number | null
+  totalCents: number
+  currency: string | null
+  suggestedCategory: string | null // rough model guess only; Phase 5 reconciles it against QBO
+}
+
+/**
+ * Per-field confidence flags (D-11, deterministic-weighted). Keyed by ParsedFields field name.
+ * 'flagged' means a deterministic check failed — the value is KEPT and surfaced for review, never
+ * rejected and never silently corrected (D-12, flag-and-keep).
+ */
+export type FieldConfidence = Record<string, 'high' | 'low' | 'flagged'>
+
+/** Per-file outcome of a parse. 'cached' means the D-14 hash cache answered with no model call. */
+export type ParseFileStatus = 'parsed' | 'parse-failed' | 'cached'
+
+/** One entry in a ParseBatchResult. `hash` is the Phase 2 SHA-256, the join key to ScanFile. */
+export interface ParseFileResult {
+  filename: string
+  hash: string
+  status: ParseFileStatus
+  fields?: ParsedFields // absent on parse-failed
+  confidence?: FieldConfidence
+  validationFlags?: string[] // which deterministic checks failed (D-12)
+  truncated?: boolean // over the D-21 10-page cap: only pages 1-3 + the last 2 were sent
+  error?: string // recoverable, human-readable reason for parse-failed (never a raw stack)
+}
+
+/** One loaded file handed to parse:parse-batch. Mirrors the loaded subset of ScanFile. */
+export interface ParseBatchFile {
+  filename: string
+  hash: string
+  batchEntryDate: string
+}
+
+/** Payload of the parse:progress broadcast — the "parsing N/M" surface (D-26). */
+export interface ParseProgress {
+  done: number
+  total: number
+  filename: string
+  status: ParseFileStatus
+}
+
+/** The whole result of one batch parse. One file failing never aborts the batch (D-15). */
+export interface ParseBatchResult {
+  files: ParseFileResult[]
+  summary: { total: number; parsed: number; failed: number; cached: number }
+}
+
+/**
+ * ai channel group. testConnection calls the endpoint's /models exactly once so a single action
+ * both validates the stored key + base URL and populates the picker (D-04). listModels re-fetches.
+ * setModel persists the non-secret selected model id to app_settings. The key never crosses here
+ * in either direction.
+ */
+export interface AiApi {
+  testConnection(): Promise<{ ok: boolean; models?: ModelInfo[]; error?: string }>
+  listModels(): Promise<ModelInfo[]>
+  setModel(modelId: string): Promise<boolean>
+}
+
+/**
+ * parse channel group. parseBatch parses the loaded scan output (auto-fired by the renderer after
+ * a scan, deliberately NOT inside the scan IPC call — D-26). reparse forces a fresh model call for
+ * one file, overriding the hash cache (D-14). onProgress subscribes to the parse:progress
+ * broadcast and returns an unsubscribe function, exactly like ThemeApi.onChange.
+ */
+export interface ParseApi {
+  parseBatch(files: ParseBatchFile[]): Promise<ParseBatchResult>
+  reparse(fileHash: string): Promise<ParseFileResult>
+  onProgress(cb: (progress: ParseProgress) => void): () => void
+}
+
 /**
  * The complete typed surface exposed to the renderer as window.api. The preload builds
  * a concrete object conforming to this interface and re-exports its type as Api, and the
@@ -121,4 +247,6 @@ export interface Api {
   secrets: SecretsApi
   theme: ThemeApi
   ingestion: IngestionApi
+  ai: AiApi
+  parse: ParseApi
 }
