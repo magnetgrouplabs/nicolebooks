@@ -57,10 +57,10 @@ updated: 2026-07-24
 | PARSE-05 / D-24 | `migration0003` creates `parsed_results` STRICT (21 cols incl. `truncated`); runner reaches user_version 3 | Tampering (SQLi) | unit (temp DB) | `npx vitest run test/migrate.test.ts` (extend) | ⚠ extend | 03-06 / W2 | ⬜ pending |
 | D-21 | over-10-page PDF sets `truncated`; round-trips through the cache (0/1 <-> boolean) | — | unit | `npx vitest run test/parse-cache.test.ts test/parse-pipeline.test.ts` | ❌ W0 | 03-06 / W2 + 03-07 / W3 | ⬜ pending |
 | D-22 | second-pass agreement runs on image-only docs only; numeric mismatch -> low-confidence flag; native PDFs skip it | — | unit (fake client) | `npx vitest run test/parse-confidence.test.ts test/parse-pipeline.test.ts` | ❌ W0 | 03-03 / W2 + 03-07 / W3 | ⬜ pending |
-| AI-03 / D-01/D-02 | vision classification: OpenRouter `input_modalities:['image']`->vision; OpenAI minimal shape->curated fallback; unknown->unbadged (confirm gate) | — | unit | `npx vitest run test/ai-models.test.ts` | ❌ W0 | 03-02 / W2 | ⬜ pending |
+| AI-03 / D-01/D-02 | vision classification: OpenRouter `input_modalities:['image']`->vision; OpenAI minimal shape->curated fallback; unknown->unbadged (confirm gate) | — | unit | `npx vitest run test/ai-models.test.ts` | ✅ exists | 03-02 / W2 | ✅ green |
 | D-15 | batch parse: one file throws -> that file marked failed, others still parsed; `parsing N/M` progress counts correct | DoS (blast-radius) | unit (fake client, one throwing file) | `npx vitest run test/parse-pipeline.test.ts` | ❌ W0 | 03-07 / W3 | ⬜ pending |
-| AI-01 / D-05 | API key + baseURL stored via secret-store (never SQLite, never renderer); no-secret-leak extends to the AI-key canary | V6 / V8 | unit | `npx vitest run test/no-secret-leak.test.ts` (extend) | ⚠ extend | 03-02 / W2 | ⬜ pending |
-| AI-02/AI-04 | model list fetched via `models.list()`; selected model id persisted in `app_settings` (non-secret) and changeable | — | unit (fake client) | `npx vitest run test/ai-models.test.ts` | ❌ W0 | 03-02 / W2 | ⬜ pending |
+| AI-01 / D-05 | API key + baseURL stored via secret-store (never SQLite, never renderer); no-secret-leak extends to the AI-key canary | V6 / V8 | unit | `npx vitest run test/no-secret-leak.test.ts` (extend) | ✅ extended | 03-02 / W2 | ✅ green |
+| AI-02/AI-04 | model list fetched via `models.list()`; selected model id persisted in `app_settings` (non-secret) and changeable | — | unit (fake client) | `npx vitest run test/ai-models.test.ts` | ✅ exists | 03-02 / W2 | ✅ green |
 | D-16 / D-26 | new ai/parse IPC handlers assertTrustedSender first, then Zod-parse payload; channels are stable strings | V4 / V5 | unit + e2e | `npx playwright test e2e/ipc-boundary.spec.ts` (extend) | ⚠ extend | 03-01 / W1 + 03-02 / W2 + 03-07 / W3 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -79,7 +79,7 @@ New scaffolds are created by the first (RED) task of the plan that owns each beh
 - [ ] `test/parse-extract.test.ts` — text-before-image content shape + strict-schema/fallback + Zod re-validate (03-05 / PARSE-03/D-23/D-25)
 - [ ] `test/parse-cache.test.ts` — cache-hit-no-recall proof + truncated round-trip (03-06 storage; extended in 03-07 for the pipeline no-recall case)
 - [ ] `test/parse-pipeline.test.ts` — per-file isolation + `parsing N/M` progress + real image-only.pdf end-to-end (03-07 / D-15/D-07)
-- [ ] `test/ai-models.test.ts` — vision classification metadata-first + curated fallback + model persist (03-02 / AI-02/03/04/D-02)
+- [x] `test/ai-models.test.ts` — vision classification metadata-first + curated fallback + model persist, plus the buildClient https/credential guards (03-02 / AI-02/03/04/D-02/T-03-05)
 - [ ] Shared fake `OpenAIClientLike` test double (03-01 / records calls; canned schema-valid / throwing responses)
 - [ ] Extend `test/migrate.test.ts` (parsed_results table + user_version 3), `test/no-secret-leak.test.ts` (AI-key canary), `test/ipc-contract.test.ts` + `e2e/ipc-boundary.spec.ts` (new ai/parse channels)
 - [ ] Framework install: none — Vitest + Playwright already present
