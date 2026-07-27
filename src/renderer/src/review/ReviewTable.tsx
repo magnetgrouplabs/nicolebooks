@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { CheckCircle2, Send } from 'lucide-react'
+import { CheckCircle2, Plus, Send } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,7 @@ import { formatCents } from '@/lib/money'
 import { ParsedFieldList, flaggedFields } from './parsed-fields'
 import {
   REF_NUMBER_MAX,
+  VENDOR_NAME_MAX,
   amountFieldInvalid,
   applyMatches,
   attentionRows,
@@ -73,6 +74,185 @@ const DUPLICATE_DEBOUNCE_MS = 400
 /** The sentence shown when the pickers have nothing in them because QuickBooks is not connected. */
 export const NO_REFERENCE_NOTICE =
   'Connect NicoleBooks to QuickBooks on the Settings screen, then sync, so vendors and categories can be picked here.'
+
+/** What the "Add new vendor" panel says it is for. */
+export const ADD_VENDOR_HINT =
+  'No vendor is picked for this bill. Choose one above, or add this supplier to QuickBooks.'
+
+/**
+ * Should this row offer to create a vendor?
+ *
+ * Exactly when it has no vendor selected. That covers both ways a row gets there: reconciliation
+ * came back 'none' because nothing in the company looked like the printed name, or the user cleared
+ * a suggestion they disagreed with. It is deliberately NOT offered on a row that already has a
+ * vendor, because the answer there is to change the selection, not to create a second record with
+ * a similar name.
+ *
+ * A locked row (already handed to QuickBooks) never offers it: nothing about that row is editable
+ * any more, so creating a vendor for it would change nothing and imply otherwise.
+ */
+export function canOfferVendorCreate(row: ReviewRow, locked = false): boolean {
+  if (locked) return false
+  return row.vendorId === null || row.vendorId === ''
+}
+
+/**
+ * What the create field starts as: the name the PARSER read off the document.
+ *
+ * Prefilled rather than blank because the document is the reason this panel is open, and retyping a
+ * supplier name off a receipt is exactly the manual work this app exists to remove. It stays fully
+ * editable, because the printed name is often not the name the books should carry ("QUALITY CRAFT
+ * TOOLS" on a receipt, "Quality Craft Tools LLC" in the ledger).
+ */
+export function vendorCreatePrefill(row: ReviewRow): string {
+  return row.parsed?.vendor?.trim() ?? ''
+}
+
+/**
+ * Splice a newly created vendor into the cached reference set, in the same order a re-read returns.
+ *
+ * Done locally as well as re-reading from main, because the option has to exist in the dropdown by
+ * the time the row's selection changes to it. Selecting an id with no matching option would leave
+ * the combobox showing an empty field over a row that is, in fact, complete.
+ *
+ * Sorted case-insensitively by name, which is what the cache's own read does (ORDER BY name COLLATE
+ * NOCASE), so the local splice and the authoritative re-read cannot disagree about position.
+ */
+export function withCreatedVendor(
+  reference: QboReference | null,
+  record: QboRefRecord
+): QboReference {
+  const base: QboReference = reference ?? {
+    vendors: [],
+    expenseAccounts: [],
+    paymentAccounts: [],
+    items: [],
+    syncedAt: null
+  }
+  const vendors = base.vendors.filter((vendor) => vendor.id !== record.id)
+  vendors.push(record)
+  vendors.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  return { ...base, vendors }
+}
+
+/** Shown only when a rejection carried no message at all, which main's mapping makes unlikely. */
+export const VENDOR_CREATE_FALLBACK =
+  'Could not add that vendor to QuickBooks just now. Try again.'
+
+/** Everything runVendorCreate touches outside itself, injected so the ORDER can be asserted. */
+export interface VendorCreateIo {
+  createVendor: (displayName: string) => Promise<QboRefRecord>
+  getReference: () => Promise<QboReference>
+  setReference: (next: QboReference) => void
+  select: (vendorId: string) => void
+  fail: (message: string) => void
+}
+
+/**
+ * Create one vendor and leave the row pointing at it.
+ *
+ * THE ORDER IS THE WHOLE FUNCTION, and it is why this is not inline in a click handler:
+ *
+ *   1. create           the only network call, and the only thing that can fail meaningfully.
+ *   2. splice locally   so the option EXISTS before anything selects it. Selecting an id with no
+ *                       matching option leaves the combobox blank over a row that is complete,
+ *                       which reads as the click having done nothing.
+ *   3. select           the row now has its vendor.
+ *   4. re-read main     the authoritative list, which also picks up anything else that changed.
+ *                       A failure here is swallowed: the vendor exists, the row is set, and the
+ *                       next sync confirms it. There is nothing for the user to do about it.
+ *
+ * A refused create surfaces main's OWN sentence verbatim. Main knows a duplicate name means "pick
+ * the existing one" and says so; rewording it here would produce two vocabularies for one failure.
+ */
+export async function runVendorCreate(
+  displayName: string,
+  current: QboReference | null,
+  io: VendorCreateIo
+): Promise<void> {
+  let record: QboRefRecord
+  try {
+    record = await io.createVendor(displayName)
+  } catch (err) {
+    const message = err instanceof Error ? err.message.trim() : ''
+    io.fail(message === '' ? VENDOR_CREATE_FALLBACK : message)
+    return
+  }
+
+  io.setReference(withCreatedVendor(current, record))
+  io.select(record.id)
+
+  try {
+    io.setReference(await io.getReference())
+  } catch {
+    /* the local splice already holds the new vendor */
+  }
+}
+
+/**
+ * The "Add new vendor" panel, shown under the vendor picker on a row with nothing selected.
+ *
+ * TWO DELIBERATE CHOICES, both about not creating records by accident:
+ *
+ *   1. IT IS A BUTTON, NOT A SIDE EFFECT. Nothing is created by typing, by blurring the field, or
+ *      by reconciliation deciding it found nothing (RECON-03). One click, on a control that says
+ *      what it does, is the only path.
+ *
+ *   2. THE FIELD IS EDITABLE. The prefill is what the document printed, which is frequently not
+ *      what the vendor should be called in the books. Locking it to the parsed text would mint
+ *      shouty receipt headers as permanent QuickBooks records.
+ */
+export function AddVendorPanel({
+  suggestedName,
+  busy = false,
+  error = null,
+  onCreate
+}: {
+  suggestedName: string
+  busy?: boolean
+  error?: string | null
+  onCreate: (displayName: string) => void
+}): React.JSX.Element {
+  const [name, setName] = useState(suggestedName)
+  const trimmed = name.trim()
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
+      <p className="font-sans text-sm text-muted-foreground">{ADD_VENDOR_HINT}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <FieldInput
+            label="Add new vendor"
+            value={name}
+            placeholder="Vendor name as it should appear in QuickBooks"
+            disabled={busy}
+            invalid={trimmed.length > VENDOR_NAME_MAX}
+            onChange={setName}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || trimmed === '' || trimmed.length > VENDOR_NAME_MAX}
+          onClick={() => onCreate(trimmed)}
+        >
+          <Plus aria-hidden="true" />
+          {busy ? 'Adding...' : 'Add to QuickBooks'}
+        </Button>
+      </div>
+      {trimmed.length > VENDOR_NAME_MAX && (
+        <p className="font-sans text-sm text-destructive">
+          Shorten this name to {VENDOR_NAME_MAX} characters or fewer.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="font-sans text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
 
 /**
  * The marker beside a reconciled cell.
@@ -240,6 +420,9 @@ export function ReviewRowCard({
   sendError,
   retrying = false,
   busy = false,
+  creatingVendor = false,
+  createVendorError = null,
+  onCreateVendor,
   onRetry,
   onEdit
 }: {
@@ -253,6 +436,11 @@ export function ReviewRowCard({
   retrying?: boolean
   /** The batch is still being read. Nothing is missing yet, so nothing is reported missing. */
   busy?: boolean
+  /** A vendor create for THIS row is in flight. */
+  creatingVendor?: boolean
+  /** The mapped sentence from a refused create, most often the duplicate-name one. */
+  createVendorError?: string | null
+  onCreateVendor?: (displayName: string) => void
   onRetry?: () => void
   onEdit: (patch: ReviewEdit) => void
 }): React.JSX.Element {
@@ -388,6 +576,22 @@ export function ReviewRowCard({
           onChange={(refNumber) => onEdit({ refNumber })}
         />
       </div>
+
+      {/* The unknown-supplier escape hatch. Only on a row with no vendor picked, only from the
+          button inside it, and never while the batch is still being read: mid-parse every row is
+          legitimately vendorless, and offering to create nine vendors would be an invitation to
+          make a mess of somebody's books. */}
+      {onCreateVendor && !busy && canOfferVendorCreate(row, locked) && (
+        <AddVendorPanel
+          // Remounts when the parsed name changes (a re-parse), so the prefill follows the document
+          // rather than stranding the field on what an earlier read guessed.
+          key={vendorCreatePrefill(row)}
+          suggestedName={vendorCreatePrefill(row)}
+          busy={creatingVendor}
+          error={createVendorError}
+          onCreate={onCreateVendor}
+        />
+      )}
 
       <DuplicateNotice warnings={warnings} />
 
@@ -570,6 +774,10 @@ export function ReviewTable({
   const [matches, setMatches] = useState<Record<string, FileMatch>>({})
   const [duplicates, setDuplicates] = useState<Record<string, DuplicateWarning[]>>({})
   const [reference, setReference] = useState<QboReference | null>(null)
+  // The vendor-create affordance, per row: which row has a create in flight, and what a refused
+  // create said. Keyed by file hash like every other per-row map on this screen.
+  const [creatingVendor, setCreatingVendor] = useState<string | null>(null)
+  const [vendorErrors, setVendorErrors] = useState<Record<string, string | null>>({})
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [sending, setSending] = useState(false)
@@ -607,6 +815,23 @@ export function ReviewTable({
   const editRow = useCallback((fileHash: string, patch: ReviewEdit): void => {
     setEdits((prev) => ({ ...prev, [fileHash]: { ...prev[fileHash], ...patch } }))
   }, [])
+
+  /** Create one vendor for one row, from that row's explicit click. Order lives in runVendorCreate. */
+  async function createVendorFor(fileHash: string, displayName: string): Promise<void> {
+    setCreatingVendor(fileHash)
+    setVendorErrors((prev) => ({ ...prev, [fileHash]: null }))
+    try {
+      await runVendorCreate(displayName, reference, {
+        createVendor: (name) => window.api.qbo.createVendor(name),
+        getReference: () => window.api.qbo.getReference(),
+        setReference,
+        select: (vendorId) => editRow(fileHash, { vendorId }),
+        fail: (message) => setVendorErrors((prev) => ({ ...prev, [fileHash]: message }))
+      })
+    } finally {
+      setCreatingVendor(null)
+    }
+  }
 
   /** Untick every row QuickBooks confirmed, so a second Send can only re-send the failures. */
   const untickConfirmed = useCallback((states: Readonly<Record<string, PostingEntryState>>): void => {
@@ -846,6 +1071,9 @@ export function ReviewTable({
             sendError={sendErrors[row.fileHash] ?? null}
             busy={busy}
             retrying={retrying?.has(row.fileHash) ?? false}
+            creatingVendor={creatingVendor === row.fileHash}
+            createVendorError={vendorErrors[row.fileHash] ?? null}
+            onCreateVendor={(displayName) => void createVendorFor(row.fileHash, displayName)}
             onRetry={onRetry ? () => onRetry(row.fileHash) : undefined}
             onEdit={(patch) => editRow(row.fileHash, patch)}
           />

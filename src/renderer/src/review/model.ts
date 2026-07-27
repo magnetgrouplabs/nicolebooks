@@ -49,6 +49,13 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 export const REF_NUMBER_MAX = 21
 
 /**
+ * The QuickBooks DisplayName limit, mirrored from QboCreateVendorSchema for the same reason
+ * REF_NUMBER_MAX is mirrored: the screen should refuse a name that is too long while the user is
+ * still typing it, not after a click that reaches Intuit and comes back rejected.
+ */
+export const VENDOR_NAME_MAX = 100
+
+/**
  * The amount bounds, mirrored from PostingRowSchema (`.int().positive().max(99999999999)`).
  *
  * Mirrored rather than imported because the schema is a Zod object, not a set of numbers, and a
