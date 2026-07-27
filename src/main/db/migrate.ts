@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3'
 import { migration0001 } from './migrations/0001_init'
 import { migration0002 } from './migrations/0002_dedupe'
 import { migration0003 } from './migrations/0003_parsed_results'
+import { migration0005 } from './migrations/0005_posting'
 
 export type Migration = { version: number; up: (db: Database.Database) => void }
 
@@ -36,7 +37,19 @@ export type Migration = { version: number; up: (db: Database.Database) => void }
 // entry here in ascending order, and follow the 0002/0003 shape: one STRICT table, integer cents
 // for money, INTEGER 0/1 for booleans (STRICT has no BOOLEAN and better-sqlite3 will not bind a
 // JS boolean), and never any secret material.
-const migrations: Migration[] = [migration0001, migration0002, migration0003]
+//
+// 0005 (posting_batches + posting_entries) has landed. 0004 arrives from QBO-CONNECT's worktree
+// and slots in ahead of it: the list is FILTERED AND SORTED by version at run time, so a database
+// that took 0005 before 0004 existed would skip 0004 forever. That is a merge-time concern for
+// exactly one machine (a dev who ran this branch before the merge) and is fixed by deleting the
+// local app.db; a shipped install has never seen either number.
+const migrations: Migration[] = [migration0001, migration0002, migration0003, migration0005]
+
+/**
+ * The highest version this build knows how to apply, so a spec can assert "migrate() advanced the
+ * database to the latest" without hard-coding a number that every new migration has to edit.
+ */
+export const LATEST_VERSION = migrations.reduce((max, m) => Math.max(max, m.version), 0)
 
 export function migrate(db: Database.Database): void {
   const current = db.pragma('user_version', { simple: true }) as number

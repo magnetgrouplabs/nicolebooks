@@ -21,7 +21,7 @@ database will never re-run it.
 | 0002    | `0002_dedupe.ts`         | Phase 2         | shipped (`posted_file_hashes`)                |
 | 0003    | `0003_parsed_results.ts` | Phase 3         | shipped (`parsed_results`)                    |
 | 0004    | reserved                 | QBO-CONNECT     | QuickBooks reference cache (not yet written)  |
-| 0005    | reserved                 | POSTING-ENGINE  | posting batches + audit ledger (not written)  |
+| 0005    | `0005_posting.ts`        | POSTING-ENGINE  | shipped (`posting_batches`, `posting_entries`) |
 
 0004 and 0005 are RESERVED, not written. Two finish-sprint agents work in parallel worktrees, so
 taking "the next free number" would give both of them 0004: the runner would then apply only the
