@@ -71,6 +71,8 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
+  --color-header: var(--header);
+  --color-header-foreground: var(--header-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
@@ -120,6 +122,11 @@
   --primary-foreground: #ffffff;
   --secondary: #f5f5f7;
   --secondary-foreground: #343434;
+  /* Header surface. The logo is fixed artwork and is never filtered, plated, or
+     recolored, so the surface under it is what has to give: it stays light in BOTH
+     themes so the lockup's #910023 crimson and #0a0a0f near-black always read. */
+  --header: #f5f5f7;
+  --header-foreground: #343434;
   --muted: #f5f5f7;
   --muted-foreground: #6e6e73;
   /* Rose tint of the crimson. Lab L 65.3 and 4.68:1 under the #343434 label,
@@ -163,6 +170,9 @@
   --popover-foreground: #f0f0f0;
   --secondary: #2a2a2a;
   --secondary-foreground: #e0e0e0;
+  /* Deliberately light in dark mode. See the note in :root. */
+  --header: #ededf0;
+  --header-foreground: #343434;
   --muted: #2a2a2a;
   --muted-foreground: #a0a0a0;
   --border: #3a3a3a;

@@ -29,42 +29,26 @@ const LOGO_INTRINSIC_HEIGHT = 639
 
 export function Header(): React.JSX.Element {
   return (
-    <header className="z-20 col-span-2 row-start-1 flex items-center justify-between rounded-none border-b border-border bg-secondary px-6">
+    <header className="z-20 col-span-2 row-start-1 flex items-center justify-between rounded-none border-b border-border bg-header px-6 text-header-foreground">
       {/*
-        The logo replaces the old text wordmark. h-8 keeps the ~3:1 lockup (1931x639) at its
-        true aspect ratio inside the 56px row, leaving 12px of breathing room above and below.
-        The alt text is the bare product name, not "NicoleBooks logo": the image IS the
-        wordmark, so a screen reader should announce it exactly as the text it replaced.
-
-        dark:brightness-0 dark:invert is a knockout STOPGAP, not a brand choice, and it wants
-        replacing with a proper dark-mode logo variant from the designer. The supplied artwork
-        is light-background only: the wordmark's only two inks are #910023 and #000000, which
-        measure 1.52:1 and 1.46:1 on the dark --secondary surface, so the whole wordmark
-        disappears when the OS is in dark mode (the theme follows the OS live, see main.tsx).
-        The knockout renders the lockup solid white at 14.35:1.
-
-        Three alternatives were rendered and measured before settling here:
-          - invert(1) hue-rotate(180deg) keeps the icon's shape but turns the crimson into
-            #ffbcdf, Lab hue 344.8 against the brand's 25.0. It renders the brand in the wrong
-            hue family, which is worse than neutral on a task about brand color.
-          - invert(1) alone turns the stiletto cyan.
-          - A light plate keeps perfect fidelity, but the PNG carries 188px (29%) of dead
-            transparent canvas along its bottom edge, so the plate comes out visibly lopsided.
-        The knockout's cost is the icon's interior detail, which flattens to a silhouette at
-        this size. It is one class to revert once a real dark asset exists.
+        The logo is fixed artwork and is never filtered, plated, recolored, or trimmed.
+        Its inks are #910023 crimson and #0a0a0f near-black, which need a light surface,
+        so the SURFACE is what gives: --header stays light in both themes (see globals.css).
+        An earlier dark:brightness-0 dark:invert knockout flattened the stiletto to a
+        featureless white blob and is gone for good. Do not reintroduce a filter here.
       */}
       <img
         src={logoUrl}
         alt="NicoleBooks"
         width={LOGO_INTRINSIC_WIDTH}
         height={LOGO_INTRINSIC_HEIGHT}
-        className="h-8 w-auto dark:brightness-0 dark:invert"
+        className="h-9 w-auto"
       />
 
       {/* Connection-status slot: neutral filled dot + label on the muted foreground token. */}
       <Badge
         variant="outline"
-        className="h-6 gap-1.5 rounded-full border-border px-2.5 text-sm font-normal text-muted-foreground"
+        className="h-6 gap-1.5 rounded-full border-header-foreground/20 px-2.5 text-sm font-normal text-header-foreground/70"
       >
         <Circle className="fill-current" aria-hidden="true" />
         Not connected

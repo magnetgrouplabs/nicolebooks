@@ -7,6 +7,17 @@ import { registerIpc } from './ipc/register'
 // Dev vs packaged: electron-vite injects ELECTRON_RENDERER_URL during `electron-vite dev`.
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
 
+// Taskbar / window icon. Without this Electron shows its own default binary icon, which is what
+// shipped until now. build/ is the electron-builder convention, so the same two files will be
+// picked up automatically for the installers in Phase 8 (icon.ico on Windows, icon.png elsewhere).
+// The source artwork is portrait 477x557, so it was padded to a centered square rather than
+// stretched: a non-square icon gets squashed by the shell.
+const windowIcon = join(
+  app.getAppPath(),
+  'build',
+  process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+)
+
 function createWindow(): void {
   // Single hardened BrowserWindow (RESEARCH Pattern 2, threat T-01-01).
   const win = new BrowserWindow({
@@ -15,6 +26,7 @@ function createWindow(): void {
     minWidth: 940,
     minHeight: 600,
     show: false,
+    icon: windowIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true, // renderer cannot reach main globals
