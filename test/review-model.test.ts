@@ -746,6 +746,20 @@ describe('the needs-attention filter unions every reason a row wants you', () =>
   it('drops an EXCLUDED incomplete row, which is not asking for anything', () => {
     expect(attentionRows([row({ vendorId: null }, { included: false })], {})).toHaveLength(0)
   })
+
+  it('does not count incompleteness while the batch is still being read', () => {
+    // Every row is empty mid-parse. Counting that would put the whole batch behind the filter and
+    // say all of it needs the user, seconds before it does not.
+    expect(attentionRows([row({ vendorId: null })], {}, true)).toHaveLength(0)
+  })
+
+  it('still counts a failed read and a duplicate while the batch is being read', () => {
+    const failed = row({
+      parse: { filename: 'x.jpg', hash: HASH_A, status: 'parse-failed', error: 'no' }
+    })
+    expect(attentionRows([failed], {}, true)).toHaveLength(1)
+    expect(attentionRows([row()], { [HASH_A]: [warning()] }, true)).toHaveLength(1)
+  })
 })
 
 // ---------------------------------------------------------------------------

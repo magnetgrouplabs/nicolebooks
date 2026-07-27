@@ -743,8 +743,8 @@ export function ReviewTable({
   const categoryOptions = toOptions(reference?.expenseAccounts ?? [], categorySelections, accountHint)
   const paymentOptions = toOptions(reference?.paymentAccounts ?? [], paymentSelections, accountHint)
 
-  const visibleRows = attentionOnly ? attentionRows(rows, duplicates) : rows
-  const attentionCount = attentionRows(rows, duplicates).length
+  const attention = attentionRows(rows, duplicates, busy)
+  const visibleRows = attentionOnly ? attention : rows
 
   if (rows.length === 0) {
     return (
@@ -766,7 +766,7 @@ export function ReviewTable({
           aria-pressed={attentionOnly}
           onClick={() => setAttentionOnly((on) => !on)}
         >
-          {attentionOnly ? 'Show all bills' : `Show what needs me (${attentionCount})`}
+          {attentionOnly ? 'Show all bills' : `Show what needs me (${attention.length})`}
         </Button>
       </div>
 

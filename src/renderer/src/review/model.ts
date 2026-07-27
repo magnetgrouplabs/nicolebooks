@@ -475,10 +475,13 @@ export function duplicateNoticeLine(warnings: readonly DuplicateWarning[]): stri
  * Four reasons, and the filter deliberately unions them rather than offering four filters: the
  * question a user asks is "what still needs me", not "which of these four categories".
  */
-export function needsAttention(row: ReviewRow, duplicateCount = 0): boolean {
+export function needsAttention(row: ReviewRow, duplicateCount = 0, busy = false): boolean {
   if (row.parse?.status === 'parse-failed') return true
   if (isFlagged(row.parse)) return true
-  if (row.included && !isRowComplete(row)) return true
+  // Mid-parse every row is legitimately incomplete, so counting that as needing attention would put
+  // the whole batch behind the filter and tell the user all of it needs them, seconds before it
+  // does not. The other three reasons are true whether or not the reading has finished.
+  if (!busy && row.included && !isRowComplete(row)) return true
   if (duplicateCount > 0) return true
   return false
 }
@@ -511,7 +514,8 @@ export function untickConfirmedRows(
 /** The rows the "needs attention" filter keeps. */
 export function attentionRows(
   rows: readonly ReviewRow[],
-  duplicates: Readonly<Record<string, DuplicateWarning[]>>
+  duplicates: Readonly<Record<string, DuplicateWarning[]>>,
+  busy = false
 ): ReviewRow[] {
-  return rows.filter((row) => needsAttention(row, duplicates[row.fileHash]?.length ?? 0))
+  return rows.filter((row) => needsAttention(row, duplicates[row.fileHash]?.length ?? 0, busy))
 }
