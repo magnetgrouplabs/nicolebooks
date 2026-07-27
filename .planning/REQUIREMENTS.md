@@ -17,10 +17,10 @@ Requirements for the initial release. Each maps to a roadmap phase.
 
 ### AI Configuration (AI)
 
-- [ ] **AI-01**: User can enter an OpenAI-compatible API key and base URL in settings, stored securely in the OS keychain
-- [ ] **AI-02**: App fetches the list of available models from the configured endpoint and lets the user pick one
-- [ ] **AI-03**: App flags or filters for vision-capable models so the user does not select a text-only model for image parsing
-- [ ] **AI-04**: User can change the selected model at any time from settings
+- [x] **AI-01**: User can enter an OpenAI-compatible API key and base URL in settings, stored securely in the OS keychain
+- [x] **AI-02**: App fetches the list of available models from the configured endpoint and lets the user pick one
+- [x] **AI-03**: App flags or filters for vision-capable models so the user does not select a text-only model for image parsing
+- [x] **AI-04**: User can change the selected model at any time from settings
 
 ### Parsing (PARSE)
 
@@ -137,10 +137,10 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 | ING-03 | Phase 2 | Complete |
 | ING-04 | Phase 2 | Complete |
 | ING-05 | Phase 2 | Complete |
-| AI-01 | Phase 3 | Pending |
-| AI-02 | Phase 3 | Pending |
-| AI-03 | Phase 3 | Pending |
-| AI-04 | Phase 3 | Pending |
+| AI-01 | Phase 3 | Complete |
+| AI-02 | Phase 3 | Complete |
+| AI-03 | Phase 3 | Complete |
+| AI-04 | Phase 3 | Complete |
 | PARSE-01 | Phase 3 | Pending |
 | PARSE-02 | Phase 3 | Pending |
 | PARSE-03 | Phase 3 | Pending |
