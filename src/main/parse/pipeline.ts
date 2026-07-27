@@ -42,7 +42,7 @@
 
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
-import { readFile as readFileFromDisk } from 'node:fs/promises'
+import { readFile as readFileFromDisk, realpath } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import type {
   ParseBatchFile,
@@ -564,12 +564,12 @@ function makeInboxReader(
   let folder = inboxPath
   return async (filename: string) => {
     folder ??= resolveInboxPath({ db }).path
-    return readFileFromDisk(safeInboxPath(folder, filename))
+    return readFileFromDisk(await safeInboxPath(folder, filename))
   }
 }
 
 /** Resolve `filename` inside `folder`, or throw. Exported-free: only the reader above calls it. */
-function safeInboxPath(folder: string, filename: string): string {
+async function safeInboxPath(folder: string, filename: string): Promise<string> {
   if (
     typeof filename !== 'string' ||
     filename === '' ||
@@ -586,10 +586,30 @@ function safeInboxPath(folder: string, filename: string): string {
   const root = resolve(folder)
   const full = resolve(join(root, filename))
   // Belt and suspenders: even with the checks above, prove the result is still inside the folder.
-  if (full !== root && !full.startsWith(root.endsWith(sep) ? root : root + sep)) {
-    throw new Error(UNSAFE_FILENAME)
-  }
-  return full
+  if (!isInside(root, full)) throw new Error(UNSAFE_FILENAME)
+
+  // ...and lexical containment is not containment. path.resolve is pure string arithmetic: it
+  // never touches the filesystem and never follows a link. A symlink (or a Windows junction)
+  // named `receipt.jpg` inside the inbox and pointing anywhere at all passes every check above,
+  // and readFile follows it. Phase 2's scan skips symlinks, but parse:parse-batch takes its file
+  // names from the RENDERER — the very boundary this guard exists for — so the scan's filter is
+  // not this path's protection.
+  //
+  // realpath throws ENOENT for a missing file, which recoverableReason already maps to the
+  // "no longer readable" copy, so the not-found case needs no special handling here.
+  const realRoot = await realpath(root)
+  const real = await realpath(full)
+  if (!isInside(realRoot, real)) throw new Error(UNSAFE_FILENAME)
+
+  // Return the RESOLVED path: reading `full` again would re-follow the link and re-open the
+  // window this check just closed.
+  return real
+}
+
+/** Is `candidate` the folder itself or something beneath it? Both sides must be absolute. */
+function isInside(root: string, candidate: string): boolean {
+  if (candidate === root) return true
+  return candidate.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
 // ---------------------------------------------------------------------------

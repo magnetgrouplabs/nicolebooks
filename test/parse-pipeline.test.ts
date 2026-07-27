@@ -28,7 +28,7 @@
 // that already owns the storage layer's fixtures.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -786,6 +786,51 @@ describe('configuration and input guards', () => {
     expect(client.neverCalled()).toBe(true)
   })
 
+  // WR-09. path.resolve is pure string arithmetic: it never touches the filesystem and never
+  // follows a link, so lexical containment is not containment. Phase 2's scan skips symlinks, but
+  // parse:parse-batch takes its file names from the RENDERER, which is the boundary this guard
+  // exists for, so the scan's filter is not this path's protection.
+  it('refuses a link inside the inbox that resolves outside it', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'nb-outside-'))
+    const target = join(outside, 'private.pdf')
+    writeFileSync(target, '%PDF-1.4 a document from outside the inbox\n')
+    linkOutside(target, outside, join(dir, 'escape.pdf'))
+
+    const client = makeFakeClient({ parsedObject: BILL })
+    const result = await parseBatch(
+      [{ filename: 'escape.pdf', hash: 'a'.repeat(64), batchEntryDate: '2026-07-27' }],
+      deps({ client, readFile: undefined, inboxPath: dir })
+    )
+
+    expect(result.files[0].status).toBe('parse-failed')
+    expect(result.files[0].error).toMatch(/not a plain file/i)
+    expect(client.neverCalled()).toBe(true)
+
+    rmSync(outside, { recursive: true, force: true })
+  })
+
+  it('still reads an ordinary file that really is in the inbox', async () => {
+    // The positive control: the realpath check must not reject the normal case.
+    const bytes = Buffer.from('%PDF-1.4 a real bill in a real inbox\n')
+    writeFileSync(join(dir, 'real-bill.pdf'), bytes)
+
+    const client = makeFakeClient({ parsedObject: BILL })
+    const result = await parseBatch(
+      [batchFile('real-bill.pdf', bytes)],
+      deps({
+        client,
+        readFile: undefined,
+        inboxPath: dir,
+        routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
+        extractPdfText: async () => ({ totalPages: 1, text: ['Total $1,336.00'] }),
+        renderPdfPageImage: async () => Buffer.from('page0')
+      })
+    )
+
+    expect(result.files[0].status).toBe('parsed')
+    expect(result.files[0].fields?.totalCents).toBe(133600)
+  })
+
   it('refuses to decode a HEIC that declares an impossible canvas (T-03-03)', async () => {
     // heic-convert has no pixel cap of its own and runs BEFORE sharp's limitInputPixels, so a
     // hostile HEIC would be fully decoded before any guard applied. The declared canvas is read
@@ -821,6 +866,22 @@ describe('configuration and input guards', () => {
     expect(result.files[0].status).toBe('parsed')
   })
 })
+
+/**
+ * Create a link inside the inbox that resolves OUTSIDE it.
+ *
+ * A symlink to a FILE is the sharpest version of this case (pre-fix, readFile follows it and the
+ * outside document is parsed), but Windows needs Developer Mode or elevation to create one. A
+ * directory JUNCTION needs neither and exercises the same containment check, so it is the
+ * fallback. On POSIX the type argument is ignored and both are ordinary symlinks.
+ */
+function linkOutside(targetFile: string, targetDir: string, linkPath: string): void {
+  try {
+    symlinkSync(targetFile, linkPath, 'file')
+  } catch {
+    symlinkSync(targetDir, linkPath, 'junction')
+  }
+}
 
 /**
  * A minimal ISOBMFF fragment carrying one `ispe` FullBox with the given declared dimensions —
