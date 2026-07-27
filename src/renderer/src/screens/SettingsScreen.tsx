@@ -50,6 +50,47 @@ const BASE_URL_PRESETS: ReadonlyArray<{ id: PresetId; label: string; url: string
 const FIELD_CLASS =
   'w-full max-w-xl rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
 
+/**
+ * app_settings key recording WHICH endpoint the stored API key belongs to.
+ *
+ * Non-secret (it is one of the two preset URLs, or a host the user typed), so app_settings is the
+ * right home and the keychain is not (D-05). It is what lets the screen tell "the saved key is
+ * for this provider" from "the saved key is for a different one" across a restart.
+ */
+const KEY_PROVIDER_SETTING = 'ai-key-base-url'
+
+/** Shown when the provider changed but no new key was typed (WR-08). */
+export const KEY_REQUIRED_FOR_PROVIDER =
+  'Enter the API key for this provider before connecting. Your saved key belongs to a different endpoint and was not sent.'
+
+/**
+ * Should "Connect and test" be blocked, and why?
+ *
+ * The bug this closes: connectAndTest always wrote ai-base-url but wrote ai-api-key only when the
+ * field was non-empty, and the field is deliberately never repopulated ("Saved. Type a new key to
+ * replace it."). So switching the provider dropdown and pressing the button sent the PREVIOUS
+ * provider's key to the NEW endpoint on the very next request. assertHttpsBaseUrl stops plaintext
+ * transport but says nothing about sending the credential to the wrong party, which is what
+ * T-03-05 is actually about.
+ *
+ * Pure and exported so the decision is testable without a DOM.
+ */
+export function connectBlockedReason(input: {
+  baseUrl: string
+  typedKey: string
+  /** The endpoint the stored key was saved for, or null when no key is stored. */
+  keyProvider: string | null
+}): string | null {
+  const baseUrl = input.baseUrl.trim()
+  if (baseUrl === '') {
+    return 'Choose a provider, or enter a base URL that starts with https://.'
+  }
+  // A newly typed key is by definition the key for the endpoint being connected to.
+  if (input.typedKey.trim() !== '') return null
+  if (input.keyProvider !== baseUrl) return KEY_REQUIRED_FOR_PROVIDER
+  return null
+}
+
 /** Vision-capable models get a badge; unbadged ones require the D-01 confirm before selection. */
 function VisionBadge({ vision }: { vision: ModelInfo['vision'] }): React.JSX.Element | null {
   if (vision === 'vision') return <Badge variant="default">Vision</Badge>
@@ -68,6 +109,8 @@ export function SettingsScreen(): React.JSX.Element {
   // Transient only. Cleared the moment it reaches the keychain, and never rendered back.
   const [apiKey, setApiKey] = useState('')
   const [keySaved, setKeySaved] = useState(false)
+  // Which endpoint the stored key belongs to (non-secret, from app_settings). null = none stored.
+  const [keyProvider, setKeyProvider] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [aiStatus, setAiStatus] = useState<'unknown' | 'ok' | 'error'>('unknown')
   const [aiError, setAiError] = useState<string | null>(null)
@@ -92,19 +135,30 @@ export function SettingsScreen(): React.JSX.Element {
     }
   }, [])
 
-  // Reflect the persisted selection on load (AI-04). Only the non-secret model id is read back;
-  // the key and base URL deliberately have no read path into this screen.
+  // Reflect the persisted selection on load (AI-04). Only NON-SECRET values are read back: the
+  // model id and the endpoint the stored key belongs to. The key and base URL themselves have no
+  // read path into this screen, and the main-side handler refuses to serve them anyway.
   useEffect(() => {
     let cancelled = false
-    async function loadSelectedModel(): Promise<void> {
+    async function loadAiSettings(): Promise<void> {
       try {
         const stored = await window.api.settings.get('ai-model')
         if (!cancelled) setSelectedModelState(stored)
       } catch {
         if (!cancelled) setSelectedModelState(null)
       }
+      try {
+        const provider = await window.api.settings.get(KEY_PROVIDER_SETTING)
+        if (cancelled) return
+        setKeyProvider(provider)
+        // A recorded provider means a key was stored on some earlier run, so the placeholder can
+        // tell the truth across a restart instead of reverting to "Paste your API key".
+        if (provider) setKeySaved(true)
+      } catch {
+        if (!cancelled) setKeyProvider(null)
+      }
     }
-    void loadSelectedModel()
+    void loadAiSettings()
     return () => {
       cancelled = true
     }
@@ -139,9 +193,12 @@ export function SettingsScreen(): React.JSX.Element {
    */
   async function connectAndTest(): Promise<void> {
     const baseUrl = resolveBaseUrl()
-    if (!baseUrl) {
+    // Checked BEFORE anything is written: writing the new base URL and then refusing would leave
+    // the stored key paired with an endpoint it does not belong to.
+    const blocked = connectBlockedReason({ baseUrl, typedKey: apiKey, keyProvider })
+    if (blocked) {
       setAiStatus('error')
-      setAiError('Choose a provider, or enter a base URL that starts with https://.')
+      setAiError(blocked)
       return
     }
 
@@ -154,6 +211,10 @@ export function SettingsScreen(): React.JSX.Element {
         await window.api.secrets.set('ai-api-key', apiKey.trim())
         setApiKey('') // transient only: it is in the keychain now, so drop it from state
         setKeySaved(true)
+        // Record which endpoint this key belongs to, so the pairing survives a restart. Written
+        // AFTER the key lands, so a failed write never claims a key that was not stored.
+        await window.api.settings.set(KEY_PROVIDER_SETTING, baseUrl)
+        setKeyProvider(baseUrl)
       }
 
       const result = await window.api.ai.testConnection()
@@ -299,12 +360,19 @@ export function SettingsScreen(): React.JSX.Element {
           autoComplete="off"
           spellCheck={false}
           className={FIELD_CLASS}
-          placeholder={keySaved ? 'Saved. Type a new key to replace it.' : 'Paste your API key'}
+          placeholder={
+            keySaved && keyProvider === resolveBaseUrl()
+              ? 'Saved. Type a new key to replace it.'
+              : keySaved
+                ? 'Enter the key for this provider'
+                : 'Paste your API key'
+          }
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
         <p className="font-sans text-sm text-muted-foreground">
-          Your key is stored in this machine&apos;s secure keychain and is never shown again.
+          Your key is stored in this machine&apos;s secure keychain and is never shown again. A key
+          is only ever sent to the provider it was saved for.
         </p>
       </div>
 
