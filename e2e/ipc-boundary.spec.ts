@@ -10,7 +10,8 @@ import { MAIN_ENTRY, _electron as electron } from '../playwright.config'
 // and every privileged handler must reject a malformed payload before acting (threats T-01-02 /
 // T-01-03). This spec asserts:
 //   1. window.require / window.process / window.module and a bare ipcRenderer are all undefined.
-//   2. window.api exposes ONLY the three named groups (settings, secrets, theme) and nothing else.
+//   2. window.api exposes ONLY the named groups (settings, secrets, theme, ingestion, ai, parse)
+//      and, within each, only named methods — never ipcRenderer or a generic invoke.
 //   3. An over-long key rejects at the main handler (Zod bound: key max 128), so the invoke rejects.
 
 test('the renderer is isolated: no Node reach, only window.api, malformed payloads reject', async () => {
@@ -41,13 +42,18 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
       settings: Object.keys(window.api.settings).sort(),
       secrets: Object.keys(window.api.secrets).sort(),
       theme: Object.keys(window.api.theme).sort(),
-      ingestion: Object.keys(window.api.ingestion).sort()
+      ingestion: Object.keys(window.api.ingestion).sort(),
+      ai: Object.keys(window.api.ai).sort(),
+      parse: Object.keys(window.api.parse).sort()
     }))
-    expect(apiShape.top).toEqual(['ingestion', 'secrets', 'settings', 'theme'])
+    expect(apiShape.top).toEqual(['ai', 'ingestion', 'parse', 'secrets', 'settings', 'theme'])
     expect(apiShape.settings).toEqual(['get', 'set'])
     expect(apiShape.secrets).toEqual(['delete', 'get', 'set'])
     expect(apiShape.theme).toEqual(['get', 'onChange'])
     expect(apiShape.ingestion).toEqual(['chooseInbox', 'resolveInbox', 'scan'])
+    // Phase 3 (plan 03-01): the ai + parse groups are named methods only — no generic invoke.
+    expect(apiShape.ai).toEqual(['listModels', 'setModel', 'testConnection'])
+    expect(apiShape.parse).toEqual(['onProgress', 'parseBatch', 'reparse'])
 
     // 3. A malformed payload (key far over the 128-char bound) is rejected by the main handler,
     //    so the invoke rejects in the renderer rather than performing any privileged action.

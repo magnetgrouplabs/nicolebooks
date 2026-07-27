@@ -124,7 +124,15 @@ describe('Channels are stable strings', () => {
       // Phase 2 ingestion channel group (plan 02-01).
       ingestionResolveInbox: 'ingestion:resolve-inbox',
       ingestionChooseInbox: 'ingestion:choose-inbox',
-      ingestionScan: 'ingestion:scan'
+      ingestionScan: 'ingestion:scan',
+      // Phase 3 ai channel group (plan 03-01): config + live model list + selected-model persistence.
+      aiTestConnection: 'ai:test-connection',
+      aiListModels: 'ai:list-models',
+      aiSetModel: 'ai:set-model',
+      // Phase 3 parse channel group (plan 03-01): batch parse + single re-parse + progress broadcast.
+      parseBatch: 'parse:parse-batch',
+      parseReparse: 'parse:reparse',
+      parseProgress: 'parse:progress'
     })
   })
 })
