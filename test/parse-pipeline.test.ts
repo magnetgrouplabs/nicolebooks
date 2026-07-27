@@ -28,8 +28,9 @@
 // that already owns the storage layer's fixtures.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -80,8 +81,33 @@ afterEach(() => {
 // helpers
 // ---------------------------------------------------------------------------
 
-function batchFile(filename: string, hashChar: string): ParseBatchFile {
-  return { filename, hash: hashChar.repeat(64), batchEntryDate: '2026-07-27' }
+/**
+ * The bytes the default reader below hands back for a file name. They carry the name so the
+ * prepared image in a recorded request is traceable to the file it came from.
+ */
+function bytesFor(filename: string): Buffer {
+  return Buffer.from(`bytes:${filename}`)
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+/**
+ * One batch entry, with the hash of the bytes the reader will actually return.
+ *
+ * The hash is REAL, not a placeholder: the pipeline re-hashes what it reads and refuses a
+ * mismatch (CR-01 of this review round), because the (filename, hash) pair is renderer-supplied
+ * and nothing upstream can bind the two. A test that pairs a made-up hash with real bytes would
+ * be asserting the exact defect that fix removed.
+ */
+function batchFile(filename: string, bytes: Buffer = bytesFor(filename)): ParseBatchFile {
+  return { filename, hash: sha256(bytes), batchEntryDate: '2026-07-27' }
+}
+
+/** The cache key a file lands under: the hash of its bytes. */
+function hashOf(filename: string, bytes: Buffer = bytesFor(filename)): string {
+  return sha256(bytes)
 }
 
 /**
@@ -170,7 +196,7 @@ describe('per-file isolation (D-15): one failure never aborts the batch', () => 
     })
 
     const result = await parseBatch(
-      [batchFile('one.pdf', 'a'), batchFile('two.pdf', 'b'), batchFile('three.pdf', 'c')],
+      [batchFile('one.pdf'), batchFile('two.pdf'), batchFile('three.pdf')],
       deps({ client })
     )
 
@@ -195,7 +221,7 @@ describe('per-file isolation (D-15): one failure never aborts the batch', () => 
     })
 
     const result = await parseBatch(
-      [batchFile('one.pdf', 'a'), batchFile('two.pdf', 'b')],
+      [batchFile('one.pdf'), batchFile('two.pdf')],
       deps({ client })
     )
 
@@ -211,7 +237,7 @@ describe('per-file isolation (D-15): one failure never aborts the batch', () => 
   it('keeps a file whose bytes cannot be read from aborting the batch', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
     const result = await parseBatch(
-      [batchFile('gone.pdf', 'a'), batchFile('here.pdf', 'b')],
+      [batchFile('gone.pdf'), batchFile('here.pdf')],
       deps({
         client,
         readFile: async (filename: string) => {
@@ -228,15 +254,15 @@ describe('per-file isolation (D-15): one failure never aborts the batch', () => 
 
   it('does not cache a failed file, so a retry is a fresh parse', async () => {
     const client = makeFakeClient({ chatError: new Error('down') })
-    await parseBatch([batchFile('one.pdf', 'a')], deps({ client }))
-    expect(getCached(db, 'a'.repeat(64))).toBeNull()
+    await parseBatch([batchFile('one.pdf')], deps({ client }))
+    expect(getCached(db, hashOf('one.pdf'))).toBeNull()
   })
 
   it('persists a parsed file so the same bytes are never re-parsed', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    await parseBatch([batchFile('one.pdf', 'a')], deps({ client }))
+    await parseBatch([batchFile('one.pdf')], deps({ client }))
 
-    const hit = getCached(db, 'a'.repeat(64))
+    const hit = getCached(db, hashOf('one.pdf'))
     expect(hit?.fields.vendor).toBe('Nassau Plumbing Supply')
     expect(hit?.fields.totalCents).toBe(133600) // integer cents, from the raw printed '1,336.00'
     expect(hit?.fields.invoiceDate).toBe('2026-07-14') // normalized to ISO by the D-10 gate
@@ -258,7 +284,7 @@ describe('progress events (D-26): the "parsing N/M" surface', () => {
     const events: ParseProgress[] = []
 
     await parseBatch(
-      [batchFile('one.pdf', 'a'), batchFile('two.pdf', 'b'), batchFile('three.pdf', 'c')],
+      [batchFile('one.pdf'), batchFile('two.pdf'), batchFile('three.pdf')],
       deps({ client, onProgress: (p) => events.push(p) })
     )
 
@@ -278,7 +304,7 @@ describe('progress events (D-26): the "parsing N/M" surface', () => {
     })
     const events: ParseProgress[] = []
     await parseBatch(
-      [batchFile('one.pdf', 'a'), batchFile('two.pdf', 'b')],
+      [batchFile('one.pdf'), batchFile('two.pdf')],
       deps({ client, onProgress: (p) => events.push(p) })
     )
     expect(events.map((e) => e.status)).toEqual(['parsed', 'parse-failed'])
@@ -287,7 +313,7 @@ describe('progress events (D-26): the "parsing N/M" surface', () => {
   it('never lets a throwing progress listener abort the batch', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
     const result = await parseBatch(
-      [batchFile('one.pdf', 'a'), batchFile('two.pdf', 'b')],
+      [batchFile('one.pdf'), batchFile('two.pdf')],
       deps({
         client,
         onProgress: () => {
@@ -315,7 +341,7 @@ describe('progress events (D-26): the "parsing N/M" surface', () => {
 describe('the D-22 second-pass agreement check', () => {
   it('makes a SECOND call for an image-only document', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    const result = await parseBatch([batchFile('receipt.jpg', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('receipt.jpg')], deps({ client }))
 
     expect(result.files[0].status).toBe('parsed')
     expect(client.callCount()).toBe(2)
@@ -326,7 +352,7 @@ describe('the D-22 second-pass agreement check', () => {
 
   it('does NOT make a second call for a native PDF (verbatim text already grounds it)', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    const result = await parseBatch([batchFile('invoice.pdf', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('invoice.pdf')], deps({ client }))
 
     expect(result.files[0].status).toBe('parsed')
     expect(client.callCount()).toBe(1)
@@ -336,7 +362,7 @@ describe('the D-22 second-pass agreement check', () => {
     // The merge order is load-bearing: agreementFlags output has to reach validationFlags BEFORE
     // computeConfidence runs, or the whole second call is inert.
     const client = makeFakeClient({ parsedObject: [BILL, BILL_DISAGREEING_TOTAL] })
-    const result = await parseBatch([batchFile('receipt.jpg', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('receipt.jpg')], deps({ client }))
 
     const file = result.files[0]
     expect(file.status).toBe('parsed')
@@ -348,7 +374,7 @@ describe('the D-22 second-pass agreement check', () => {
 
   it('records no agreement flag when the two passes agree', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    const result = await parseBatch([batchFile('receipt.jpg', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('receipt.jpg')], deps({ client }))
     expect(result.files[0].validationFlags?.some((f) => f.startsWith('agreement:'))).toBe(false)
   })
 
@@ -359,28 +385,28 @@ describe('the D-22 second-pass agreement check', () => {
         return makeChatResponse(BILL)
       }
     })
-    const result = await parseBatch([batchFile('receipt.jpg', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('receipt.jpg')], deps({ client }))
     expect(result.files[0].status).toBe('parsed')
     expect(result.files[0].fields?.totalCents).toBe(133600)
   })
 
   it('pairs the embedded text with the image on the native route (D-06) and omits it otherwise', async () => {
     const nativeClient = makeFakeClient({ parsedObject: BILL })
-    await parseBatch([batchFile('invoice.pdf', 'a')], deps({ client: nativeClient }))
+    await parseBatch([batchFile('invoice.pdf')], deps({ client: nativeClient }))
     expect(requestText(chatArgs(nativeClient)[0])).toContain('Total $1,336.00')
 
     const photoClient = makeFakeClient({ parsedObject: BILL })
-    await parseBatch([batchFile('receipt.jpg', 'b')], deps({ client: photoClient }))
+    await parseBatch([batchFile('receipt.jpg')], deps({ client: photoClient }))
     expect(requestText(chatArgs(photoClient)[0])).not.toContain('Total $1,336.00')
   })
 
   it('grounds a native-route field against the embedded text, and cannot ground a photo', async () => {
     const nativeClient = makeFakeClient({ parsedObject: BILL })
-    const native = await parseBatch([batchFile('invoice.pdf', 'a')], deps({ client: nativeClient }))
+    const native = await parseBatch([batchFile('invoice.pdf')], deps({ client: nativeClient }))
     expect(native.files[0].confidence?.totalCents).toBe('high')
 
     const photoClient = makeFakeClient({ parsedObject: BILL })
-    const photo = await parseBatch([batchFile('receipt.jpg', 'b')], deps({ client: photoClient }))
+    const photo = await parseBatch([batchFile('receipt.jpg')], deps({ client: photoClient }))
     expect(photo.files[0].confidence?.totalCents).toBe('low')
   })
 })
@@ -406,7 +432,7 @@ describe('the D-21 page cap (both PDF branches)', () => {
     const client = makeFakeClient({ parsedObject: BILL })
     const rendered: number[] = []
     const result = await parseBatch(
-      [batchFile('long-invoice.pdf', 'a')],
+      [batchFile('long-invoice.pdf')],
       deps({
         client,
         routeFile: async () => ({ route: 'native', pageCount: 14, pages: [] }),
@@ -420,14 +446,14 @@ describe('the D-21 page cap (both PDF branches)', () => {
     expect(rendered).toEqual([0, 1, 2, 12, 13]) // never rendered the 9 pages it would not send
     expect(imageBuffers(chatArgs(client)[0]).length).toBe(5)
     expect(result.files[0].truncated).toBe(true)
-    expect(getCached(db, 'a'.repeat(64))?.truncated).toBe(true)
+    expect(getCached(db, hashOf('long-invoice.pdf'))?.truncated).toBe(true)
   })
 
   it('truncates and flags an over-cap IMAGE-ONLY pdf too (not only the native branch)', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
     const rendered: number[] = []
     const result = await parseBatch(
-      [batchFile('long-scan.pdf', 'a')],
+      [batchFile('long-scan.pdf')],
       deps({
         client,
         routeFile: async () => ({ route: 'image-only', pageCount: 12, pages: [] }),
@@ -443,14 +469,14 @@ describe('the D-21 page cap (both PDF branches)', () => {
 
     expect(rendered).toEqual([0, 1, 2, 10, 11])
     expect(result.files[0].truncated).toBe(true)
-    expect(getCached(db, 'a'.repeat(64))?.truncated).toBe(true)
+    expect(getCached(db, hashOf('long-scan.pdf'))?.truncated).toBe(true)
   })
 
   it('leaves truncated false for a document inside the cap', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    const result = await parseBatch([batchFile('invoice.pdf', 'a')], deps({ client }))
+    const result = await parseBatch([batchFile('invoice.pdf')], deps({ client }))
     expect(result.files[0].truncated).toBe(false)
-    expect(getCached(db, 'a'.repeat(64))?.truncated).toBe(false)
+    expect(getCached(db, hashOf('invoice.pdf'))?.truncated).toBe(false)
   })
 })
 
@@ -466,7 +492,7 @@ describe('an image-only PDF is rasterized, never handed to sharp (D-07/D-19)', (
     const bytes = await readFile(IMAGE_ONLY_PDF)
     const client = makeFakeClient({ parsedObject: BILL })
 
-    const result = await parseBatch([batchFile('scanned-bill.pdf', 'a')], {
+    const result = await parseBatch([batchFile('scanned-bill.pdf', bytes)], {
       db,
       client,
       model: 'fake-vision-model',
@@ -480,14 +506,14 @@ describe('an image-only PDF is rasterized, never handed to sharp (D-07/D-19)', (
 
     expect(result.files[0].status).toBe('parsed')
     expect(result.files[0].fields?.vendor).toBe('Nassau Plumbing Supply')
-    expect(getCached(db, 'a'.repeat(64))?.route).toBe('image-only')
+    expect(getCached(db, hashOf('scanned-bill.pdf', bytes))?.route).toBe('image-only')
   }, 60_000)
 
   it('puts a REAL rendered JPEG on the wire (proving the render path ran)', async () => {
     const bytes = await readFile(IMAGE_ONLY_PDF)
     const client = makeFakeClient({ parsedObject: BILL })
 
-    await parseBatch([batchFile('scanned-bill.pdf', 'a')], {
+    await parseBatch([batchFile('scanned-bill.pdf', bytes)], {
       db,
       client,
       model: 'fake-vision-model',
@@ -507,7 +533,7 @@ describe('an image-only PDF is rasterized, never handed to sharp (D-07/D-19)', (
     const bytes = await readFile(IMAGE_ONLY_PDF)
     const client = makeFakeClient({ parsedObject: BILL })
 
-    await parseBatch([batchFile('scanned-bill.pdf', 'a')], {
+    await parseBatch([batchFile('scanned-bill.pdf', bytes)], {
       db,
       client,
       model: 'fake-vision-model',
@@ -526,7 +552,7 @@ describe('an image-only PDF is rasterized, never handed to sharp (D-07/D-19)', (
 describe('configuration and input guards', () => {
   it('fails every file with a configuration reason when no model is selected', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
-    const result = await parseBatch([batchFile('one.pdf', 'a')], deps({ client, model: null }))
+    const result = await parseBatch([batchFile('one.pdf')], deps({ client, model: null }))
 
     expect(result.files[0].status).toBe('parse-failed')
     expect(result.files[0].error).toMatch(/settings/i)
@@ -541,7 +567,7 @@ describe('configuration and input guards', () => {
     const result = await parseBatch(
       [
         { filename: '../../../etc/passwd', hash: 'a'.repeat(64), batchEntryDate: '2026-07-27' },
-        batchFile('ok.pdf', 'b')
+        batchFile('ok.pdf')
       ],
       deps({ client, readFile: undefined, inboxPath: dir })
     )
@@ -551,13 +577,88 @@ describe('configuration and input guards', () => {
     expect(client.neverCalled()).toBe(true)
   })
 
+  // CR-03. The (filename, hash) pair is renderer-supplied and ParseBatchSchema can only check the
+  // hash's LENGTH, so the pipeline has to bind the two itself by re-hashing what it read.
+  it('refuses bytes whose hash does not match the declared one, and pays for no model call', async () => {
+    const client = makeFakeClient({ parsedObject: BILL })
+    const declared = batchFile('invoice-0912.pdf') // hashed at scan time (T1)
+
+    const result = await parseBatch(
+      [declared],
+      deps({
+        client,
+        // The file was re-synced between the scan and the read (T2): same name, different bytes.
+        readFile: async () => Buffer.from('bytes:a completely different, newer invoice')
+      })
+    )
+
+    expect(result.files[0].status).toBe('parse-failed')
+    expect(result.files[0].error).toMatch(/scan/i)
+    expect(result.files[0].fields).toBeUndefined()
+    // Not one token paid for stale bytes: the check runs before routing and before the call.
+    expect(client.neverCalled()).toBe(true)
+  })
+
+  it('writes NOTHING to parsed_results when the bytes do not match the hash', async () => {
+    const client = makeFakeClient({ parsedObject: BILL })
+    const declared = batchFile('invoice-0912.pdf')
+
+    await parseBatch(
+      [declared],
+      deps({ client, readFile: async () => Buffer.from('bytes:the newer $8,400 invoice') })
+    )
+
+    // The durable half of the defect: the OTHER document's fields under THIS file's hash. Any
+    // later scan of the original bytes would then answer from that row as 'cached', with no
+    // model call and no flag.
+    expect(getCached(db, declared.hash)).toBeNull()
+    expect(db.prepare('SELECT COUNT(*) AS n FROM parsed_results').get()).toEqual({ n: 0 })
+  })
+
+  it('isolates a changed file to its own row and parses the rest of the batch', async () => {
+    const client = makeFakeClient({ parsedObject: BILL })
+    const result = await parseBatch(
+      [batchFile('one.pdf'), batchFile('changed.pdf'), batchFile('three.pdf')],
+      deps({
+        client,
+        readFile: async (filename) =>
+          filename === 'changed.pdf'
+            ? Buffer.from('bytes:changed under us')
+            : Buffer.from(`bytes:${filename}`)
+      })
+    )
+
+    expect(result.files.map((f) => f.status)).toEqual(['parsed', 'parse-failed', 'parsed'])
+    expect(result.summary).toEqual({ total: 3, parsed: 2, failed: 1, cached: 0 })
+  })
+
+  it('refuses a renderer-supplied hash that belongs to a different file', async () => {
+    // The trust-boundary half: a compromised or buggy renderer pairing file A's name with file
+    // B's hash must not be able to write A's parse into B's cache row.
+    const client = makeFakeClient({ parsedObject: BILL })
+    const poisoned: ParseBatchFile = {
+      filename: 'one.pdf',
+      hash: hashOf('two.pdf'), // a real, valid hash — of the WRONG file
+      batchEntryDate: '2026-07-27'
+    }
+
+    const result = await parseBatch([poisoned], deps({ client }))
+
+    expect(result.files[0].status).toBe('parse-failed')
+    expect(getCached(db, hashOf('two.pdf'))).toBeNull()
+    expect(client.neverCalled()).toBe(true)
+  })
+
   it('refuses to decode a HEIC that declares an impossible canvas (T-03-03)', async () => {
     // heic-convert has no pixel cap of its own and runs BEFORE sharp's limitInputPixels, so a
     // hostile HEIC would be fully decoded before any guard applied. The declared canvas is read
     // from the ISOBMFF ispe box and checked first; a trip is a parse-failed row, never a crash.
     const client = makeFakeClient({ parsedObject: BILL })
     const result = await parseBatch(
-      [batchFile('bomb.heic', 'a'), batchFile('fine.jpg', 'b')],
+      [
+        batchFile('bomb.heic', heicWithDeclaredSize(60_000, 60_000)),
+        batchFile('fine.jpg', Buffer.from('jpegish'))
+      ],
       deps({
         client,
         readFile: async (filename) =>
@@ -573,7 +674,7 @@ describe('configuration and input guards', () => {
   it('lets a normally-sized HEIC through the pixel budget', async () => {
     const client = makeFakeClient({ parsedObject: BILL })
     const result = await parseBatch(
-      [batchFile('phone.heic', 'a')],
+      [batchFile('phone.heic', heicWithDeclaredSize(4032, 3024))],
       deps({
         client,
         readFile: async () => heicWithDeclaredSize(4032, 3024), // a real iPhone frame

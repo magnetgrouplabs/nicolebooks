@@ -26,6 +26,7 @@
 //     schema bump forces a re-parse, while a model switch alone never does)
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -45,8 +46,17 @@ import type { FieldConfidence, ParsedFields } from '../src/shared/ipc-contract'
 let dir: string
 let db: Database.Database
 
-export const HASH_A = 'a'.repeat(64)
-export const HASH_B = 'b'.repeat(64)
+/**
+ * The two documents this file stands up, and their REAL SHA-256 digests.
+ *
+ * The digests have to be genuine because the pipeline re-hashes the bytes it reads and refuses a
+ * mismatch (CR-03): the (filename, hash) pair is renderer-supplied and no schema can bind the two.
+ * Placeholder hashes paired with unrelated bytes would be asserting the defect that fix removed.
+ */
+export const BYTES_A = Buffer.from('%PDF-1.4 nassau-plumbing-0417\n')
+export const BYTES_B = Buffer.from('%PDF-1.4 corner-hardware-2211\n')
+export const HASH_A = createHash('sha256').update(BYTES_A).digest('hex')
+export const HASH_B = createHash('sha256').update(BYTES_B).digest('hex')
 
 /** A fully populated validated field set (post 03-03 gate: integer cents, ISO dates). */
 export const FIELDS: ParsedFields = {
@@ -413,7 +423,7 @@ describe('cache-hit no-recall at the pipeline level (PARSE-05 / D-13/D-14)', () 
       model: 'fake-vision-model',
       baseUrl: 'https://api.openai.com/v1',
       now: () => '2026-07-28T09:00:00.000Z',
-      readFile: async () => Buffer.from('bytes'),
+      readFile: async () => BYTES_A,
       routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
       extractPdfText: async () => ({ totalPages: 1, text: ['Total $1,336.00'] }),
       renderPdfPageImage: async () => Buffer.from('page')
@@ -447,7 +457,7 @@ describe('cache-hit no-recall at the pipeline level (PARSE-05 / D-13/D-14)', () 
       force: true,
       model: 'fake-vision-model',
       now: () => '2026-07-28T10:00:00.000Z',
-      readFile: async () => Buffer.from('bytes'),
+      readFile: async () => BYTES_A,
       routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
       extractPdfText: async () => ({ totalPages: 1, text: ['Total $47.99'] }),
       renderPdfPageImage: async () => Buffer.from('page')
@@ -484,7 +494,7 @@ describe('cache-hit no-recall at the pipeline level (PARSE-05 / D-13/D-14)', () 
         client,
         model: 'fake-vision-model',
         now: () => '2026-07-27T16:00:00.000Z',
-        readFile: async () => Buffer.from('bytes'),
+        readFile: async (filename) => (filename === CACHED_FILE.filename ? BYTES_A : BYTES_B),
         routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
         extractPdfText: async () => ({ totalPages: 1, text: ['Total $47.99'] }),
         renderPdfPageImage: async () => Buffer.from('page')

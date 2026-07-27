@@ -26,6 +26,11 @@
 //      (or not at all) leaves the entire second cross-call inert while still paying for it.
 //   4. ONE FILE'S FAILURE IS ONE ROW (D-15). Every throw becomes a 'parse-failed' result carrying
 //      a plain recoverable reason, and the loop continues. Mirrors Phase 2's WR-01 isolation.
+//   5. NOTHING IS CACHED UNDER A HASH THIS MODULE DID NOT VERIFY. The (filename, hash) pair comes
+//      from the renderer and no schema can bind the two, so the bytes are re-hashed after the read
+//      and a mismatch is a per-file failure BEFORE any paid call. Without it, a file re-synced
+//      between the scan and the read stores the new document's fields under the old file's hash,
+//      and every later scan of the old file answers from that row as 'cached' with no flag.
 //
 // SECRET BOUNDARY (threat T-03-01): the API key lives inside the injected/lazily-built client and
 // is never read here. Only the base URL's HOST is persisted, and cache.ts derives it. This module
@@ -36,6 +41,7 @@
 // and the renderer-supplied `filename` is validated to be a plain name inside it before any read.
 
 import type Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import { readFile as readFileFromDisk } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import type {
@@ -108,6 +114,9 @@ const UNSAFE_FILENAME_COPY =
 
 const MISSING_BYTES_COPY =
   'That file is no longer readable in your inbox folder. Re-scan, then try again.'
+
+const STALE_BYTES_COPY =
+  'That file changed since the last scan, so it was not read. Click Scan now, then try again.'
 
 const PIXEL_BUDGET_COPY =
   'That photo claims to be far larger than any real camera produces, so it was not opened. Replace it with a normal photo or a PDF.'
@@ -260,13 +269,29 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
 
     const bytes = await ctx.readFile(filename)
 
-    // ---- 2. ROUTE (D-20). Native-with-authoritative-text, or image-only. ----
+    // ---- 2. BIND THE HASH TO THE BYTES, before a single token is paid for. ----
+    // The (filename, hash) pair arrives from the RENDERER and nothing upstream can bind the two:
+    // ParseBatchSchema only checks that the hash is 64 characters long. Two ways an unverified
+    // pairing produces a durable wrong answer:
+    //   1. TOCTOU, the realistic one. runScan hashes at T1; this reads at T2, minutes later for
+    //      the last file of a batch (sequential, two model calls per image-only document). This
+    //      app deliberately targets cloud-synced folders — Phase 2 ships a whole materialization
+    //      gate because files DO change underneath it. Re-syncing bill.pdf in that window would
+    //      store the NEW document's fields under the OLD hash.
+    //   2. Trust boundary. A renderer bug or compromise could poison any cache row at will.
+    // The damage is durable because the cache is authoritative: a later scan of the original
+    // bytes returns the other document's vendor, dates and total as 'cached', with no model call
+    // and no flag. parse:reparse already resolves by hash (parse.ts findInboxFileByHash), so this
+    // makes the batch path consistent with it rather than adding a new rule.
+    if (sha256(bytes) !== hash) return failedResult(filename, hash, STALE_BYTES_COPY)
+
+    // ---- 3. ROUTE (D-20). Native-with-authoritative-text, or image-only. ----
     const decision = await ctx.routeFile({ filename, bytes })
 
-    // ---- 3. PREPARE the request content (D-06/D-07/D-19/D-21). ----
+    // ---- 4. PREPARE the request content (D-06/D-07/D-19/D-21). ----
     const prepared = await prepareDocument(filename, bytes, decision, ctx)
 
-    // ---- 4. EXTRACT (D-23/D-25). Never throws; failure arrives as a reason code. ----
+    // ---- 5. EXTRACT (D-23/D-25). Never throws; failure arrives as a reason code. ----
     const primary = await extractFields({
       model: ctx.model,
       referenceText: prepared.referenceText,
@@ -283,7 +308,7 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
     // module dropped before handing pages over. Either one means pages were omitted.
     const truncated = prepared.truncated || primary.truncated
 
-    // ---- 5. THE D-22 SECOND PASS — image-only documents only. ----
+    // ---- 6. THE D-22 SECOND PASS — image-only documents only. ----
     // A native PDF is already grounded against its own verbatim text, so a second call would buy
     // nothing. On an image-only document nothing grounds, and two temperature-0 reads disagreeing
     // is real evidence of an unstable read rather than sampling noise.
@@ -303,7 +328,7 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
       // The affected fields simply stay at their ungrounded 'low'.
     }
 
-    // ---- 6. CONFIDENCE, then CACHE LAST. ----
+    // ---- 7. CONFIDENCE, then CACHE LAST. ----
     const confidence = computeConfidence(validated.fields, prepared.referenceText, validationFlags)
 
     putCached(ctx.db, {
@@ -556,6 +581,15 @@ function readBaseUrl(): string | null {
 
 function isPdf(filename: string): boolean {
   return typeof filename === 'string' && filename.toLowerCase().endsWith('.pdf')
+}
+
+/**
+ * SHA-256 of the bytes actually read, in the same lowercase hex form Phase 2's sha256File
+ * produces. Buffered rather than streamed because the bytes are already in memory here, and the
+ * pre-decode pixel budget plus Phase 2's own size handling bound what can get this far.
+ */
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 function toJpegDataUrl(jpeg: Buffer): string {
