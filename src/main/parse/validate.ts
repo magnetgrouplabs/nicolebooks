@@ -71,6 +71,10 @@ export interface ValidatedBill {
  * must surface as a flagged, empty amount, never as a confident $0.00 bill posted to
  * QuickBooks.
  *
+ * Sign handling is equally load-bearing and is read from the RAW string (see the block comment
+ * inside): a credit memo whose sign is dropped becomes a charge of the same size, and because a
+ * consistently flipped bill still satisfies subtotal + tax = total, no downstream check catches it.
+ *
  * Separator handling, in order:
  *   - Both '.' and ',' present -> the RIGHTMOST one is the decimal point. This reads both
  *     '1,234.10' and the European '1.234,56' correctly.
@@ -88,11 +92,27 @@ export function toCents(raw: string | null): number | null {
   const trimmed = raw.trim()
   if (trimmed === '') return null
 
-  // A credit or refund prints either with a leading minus or wrapped in accounting parentheses.
-  const negative = trimmed.startsWith('-') || /^\(.*\)$/.test(trimmed)
+  // A credit or refund prints its sign in one of five conventions, and the currency symbol or ISO
+  // code frequently sits BETWEEN the sign and the digits. So the sign is read from the raw string
+  // here, before the symbol strip below; reading it after (or reading only the first character)
+  // loses every form except a bare leading minus and silently turns a credit into a charge:
+  //
+  //   -45.00   $-45.00   USD -45.00   45.00-   (45.00)   ($45.00)   $1,234.10 CR
+  //
+  // 'CR' is the accounting credit marker. A 'DR' (debit) suffix is a positive amount and is
+  // deliberately NOT matched, and 'CR' inside a longer word ('CREDIT MEMO') is not the marker.
+  const parenthesised = /^\(.*\)$/.test(trimmed)
+  const trailingMinus = /-\s*$/.test(trimmed)
+  const creditSuffix = /\bcr\b\.?\s*$/i.test(trimmed)
+  // A minus anywhere ahead of the digits: covers both '-45.00' and '$-45.00' / 'USD -45.00'.
+  const minusBeforeDigits = /-[^0-9]*[0-9]/.test(trimmed)
+  const negative = parenthesised || trailingMinus || creditSuffix || minusBeforeDigits
 
-  // Drop currency symbols, ISO codes, spaces and stray punctuation; keep only the number.
-  const numeric = trimmed.replace(/[^0-9.,]/g, '')
+  // Drop currency symbols, ISO codes, spaces and stray punctuation; keep only the number. A
+  // trailing separator is sentence punctuation, never a decimal point with nothing after it
+  // ('45.00 CR.' -> '45.00'), and leaving it in would read the REAL decimal point as grouping
+  // and inflate the amount 100x.
+  const numeric = trimmed.replace(/[^0-9.,]/g, '').replace(/[.,]+$/, '')
   if (!/[0-9]/.test(numeric)) return null
 
   const lastDot = numeric.lastIndexOf('.')

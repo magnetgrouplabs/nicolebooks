@@ -104,6 +104,41 @@ describe('toCents', () => {
     expect(toCents('($5.50)')).toBe(-550)
   })
 
+  // CR-01 regression. The sign used to be read from the RAW string with
+  // `startsWith('-')`, so every credit format below silently came back POSITIVE — a $450
+  // vendor credit stored as a $450 charge, then grounded and badged high confidence.
+  it('reads a minus that sits after the currency symbol or ISO code', () => {
+    expect(toCents('$-45.00')).toBe(-4500)
+    expect(toCents('USD -45.00')).toBe(-4500)
+    expect(toCents('-$45.00')).toBe(-4500)
+    expect(toCents('USD-1,234.10')).toBe(-123410)
+  })
+
+  it('reads the trailing-minus form standard on POS and ERP exports', () => {
+    expect(toCents('45.00-')).toBe(-4500)
+    expect(toCents('1,234.10-')).toBe(-123410)
+    expect(toCents('$45.00 -')).toBe(-4500)
+  })
+
+  it('reads the accounting CR suffix as a credit', () => {
+    expect(toCents('$1,234.10 CR')).toBe(-123410)
+    expect(toCents('45.00 cr')).toBe(-4500)
+    expect(toCents('45.00 CR.')).toBe(-4500)
+  })
+
+  it('ignores sentence punctuation trailing the amount', () => {
+    // '45.00.' must not read the real decimal point as a grouping separator (100x inflation).
+    expect(toCents('$45.00.')).toBe(4500)
+    expect(toCents('45.00,')).toBe(4500)
+  })
+
+  it('leaves a plain amount positive, including the DR (debit) suffix', () => {
+    // DR is the debit marker: a positive amount. Only CR means credit.
+    expect(toCents('45.00 DR')).toBe(4500)
+    expect(toCents('$45.00')).toBe(4500)
+    expect(toCents('CREDIT MEMO 45.00')).toBe(4500) // 'CR' inside a word is not the marker
+  })
+
   it('returns null for garbage instead of throwing or silently returning 0', () => {
     // A bill whose total reads "N/A" must be FLAGGED, never recorded as $0.00.
     for (const raw of ['', '   ', 'N/A', 'see attached', '--', '$', '.']) {
@@ -208,6 +243,28 @@ describe('validateBill — arithmetic cross-check (D-10/D-12)', () => {
     expect(
       validateBill(bill({ subtotal: null, tax: '8.00', total: '999.00' })).validationFlags
     ).not.toContain(ARITHMETIC_FLAG)
+  })
+})
+
+describe('validateBill — a credit memo keeps its sign (CR-01)', () => {
+  it('records a credit printed with a symbol-prefixed minus as NEGATIVE cents', () => {
+    // The failure this pins: all three amounts flipped positive, the arithmetic check still
+    // balanced (because they flipped consistently), nothing was flagged, and Phase 7 would post
+    // a $1,336 charge where a $1,336 credit belonged.
+    const { fields, validationFlags } = validateBill(
+      bill({ subtotal: '$-1,234.10', tax: '$-101.90', total: '$-1,336.00' })
+    )
+    expect(fields.subtotalCents).toBe(-123410)
+    expect(fields.taxCents).toBe(-10190)
+    expect(fields.totalCents).toBe(-133600)
+    // Consistently signed amounts still satisfy subtotal + tax = total, so the arithmetic check
+    // was never the safety net here — reading the sign correctly is.
+    expect(validationFlags).not.toContain(ARITHMETIC_FLAG)
+  })
+
+  it('records a trailing-minus and a CR-suffixed total as negative too', () => {
+    expect(validateBill(bill({ total: '450.00-' })).fields.totalCents).toBe(-45000)
+    expect(validateBill(bill({ total: '$450.00 CR' })).fields.totalCents).toBe(-45000)
   })
 })
 

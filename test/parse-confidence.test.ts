@@ -117,6 +117,38 @@ describe('computeConfidence — grounding', () => {
     expect(Object.keys(c)).toContain('vendor')
   })
 
+  // CR-01, the second half: grounding must agree with the printed SIGN. Without this a credit
+  // memo reading '-450.00' certifies a positive 45000 as 'high' — the review screen actively
+  // telling Nicole to trust a number with the wrong sign.
+  it('grounds a credit against its printed minus', () => {
+    const credit = 'Credit memo\nTotal -450.00'
+    expect(computeConfidence(fields({ totalCents: -45000 }), credit, []).totalCents).toBe('high')
+  })
+
+  it('refuses to ground a POSITIVE amount against a printed credit', () => {
+    const credit = 'Credit memo\nTotal -450.00'
+    expect(computeConfidence(fields({ totalCents: 45000 }), credit, []).totalCents).not.toBe('high')
+  })
+
+  it('refuses to ground a NEGATIVE amount against a printed charge', () => {
+    const charge = 'Invoice\nTotal 450.00'
+    expect(computeConfidence(fields({ totalCents: -45000 }), charge, []).totalCents).not.toBe(
+      'high'
+    )
+  })
+
+  it('grounds a credit printed in the parenthesised and CR conventions', () => {
+    expect(
+      computeConfidence(fields({ totalCents: -45000 }), 'Total (450.00)', []).totalCents
+    ).toBe('high')
+    expect(
+      computeConfidence(fields({ totalCents: -45000 }), 'Total 450.00 CR', []).totalCents
+    ).toBe('high')
+    expect(
+      computeConfidence(fields({ totalCents: -45000 }), 'Total 450.00-', []).totalCents
+    ).toBe('high')
+  })
+
   it('yields low, not high, for an image-only document with no embedded text', () => {
     // No text layer means no grounding is possible; D-22 agreement supplies the extra signal.
     const c = computeConfidence(fields(), '', [])

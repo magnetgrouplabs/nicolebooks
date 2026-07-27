@@ -182,7 +182,7 @@ function isGrounded(key: keyof ParsedFields, value: string | number, haystack: s
     case 'subtotalCents':
     case 'taxCents':
     case 'totalCents':
-      return typeof value === 'number' && moneyVariants(value).some((v) => containsToken(haystack, v))
+      return typeof value === 'number' && groundsMoney(haystack, value)
     case 'invoiceDate':
     case 'dueDate':
       return typeof value === 'string' && dateVariants(value).some((v) => containsToken(haystack, v))
@@ -212,6 +212,49 @@ function containsToken(haystack: string, needle: string): boolean {
     if (!/[0-9.,]/.test(before) && !/[0-9]/.test(after)) return true
     from = at + 1
   }
+}
+
+/**
+ * Ground an integer-cents amount against the document text, SIGN INCLUDED.
+ *
+ * The digits matching is not enough. A document printing '-450.00' must not certify a positive
+ * 45000, and a document printing '450.00' must not certify a negative one — that is exactly the
+ * "wrong number the pipeline then certifies" failure: a sign error survives the arithmetic
+ * cross-check (a consistently flipped bill still balances) and grounding is the only layer left
+ * that can see it.
+ */
+function groundsMoney(haystack: string, cents: number): boolean {
+  const wantNegative = cents < 0
+  for (const variant of moneyVariants(cents)) {
+    if (variant === '') continue
+    let from = 0
+    for (;;) {
+      const at = haystack.indexOf(variant, from)
+      if (at < 0) break
+      const end = at + variant.length
+      const before = at === 0 ? '' : haystack[at - 1]
+      const after = haystack[end] ?? ''
+      // The same numeric-boundary rule containsToken applies, so 8.00 still cannot ground
+      // itself inside 108.00.
+      if (!/[0-9.,]/.test(before) && !/[0-9]/.test(after)) {
+        if (printedNegative(haystack, at, end) === wantNegative) return true
+      }
+      from = at + 1
+    }
+  }
+  return false
+}
+
+/**
+ * Does the document print THIS occurrence as a credit? Reads the four conventions toCents
+ * accepts: a leading minus (with an optional currency symbol between), accounting parentheses,
+ * a trailing minus, and a trailing CR marker.
+ */
+function printedNegative(haystack: string, at: number, end: number): boolean {
+  const lead = haystack.slice(Math.max(0, at - 8), at)
+  if (/[-(][^0-9a-z]{0,4}$/i.test(lead)) return true
+  const trail = haystack.slice(end, end + 6)
+  return /^\s*(-|\)|cr\b)/i.test(trail)
 }
 
 /** How integer cents could have been printed, in both separator conventions. */
