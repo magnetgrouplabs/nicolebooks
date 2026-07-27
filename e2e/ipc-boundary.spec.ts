@@ -76,11 +76,14 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
     // Finish sprint (SEAMS): the four new groups are likewise named methods only. Handler bodies
     // land later; the bridge surface is pinned here so a downstream agent cannot widen it into a
     // generic invoke, and so a group that quietly loses a method fails at merge.
+    // setEnvironment is PROD-MODE's one added method: sandbox or live company. It is named, like
+    // every other method here, and it takes a two-value enum rather than a URL.
     expect(apiShape.qbo).toEqual([
       'connect',
       'disconnect',
       'getReference',
       'onStatusChanged',
+      'setEnvironment',
       'status',
       'syncReference'
     ])

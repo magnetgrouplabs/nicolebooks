@@ -26,7 +26,7 @@ import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { HealthIndicator } from '../components/HealthIndicator'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import type { ModelInfo, QboStatus, QboSyncResult } from '@shared/ipc-contract'
+import type { ModelInfo, QboEnvironment, QboStatus, QboSyncResult } from '@shared/ipc-contract'
 
 // Storage keys are written as literals at each call site so a reader can see exactly what leaves
 // this screen. They must stay in step with the main-side readers: 'ai-api-key' / 'ai-base-url' in
@@ -102,6 +102,48 @@ export function connectBlockedReason(input: {
 const QBO_CLIENT_CONFIGURED_SETTING = 'qbo-client-configured'
 
 /**
+ * app_settings key holding which Intuit environment the app is pointed at.
+ *
+ * Written main-side by the qbo:set-environment handler (which also clears the connection), and read
+ * back here over the ordinary settings channel because it is a plain non-secret choice. The literal
+ * is repeated rather than imported so a reader can see exactly what leaves this screen; it must stay
+ * in step with QBO_ENVIRONMENT_SETTING in src/main/qbo/environment.ts.
+ */
+const QBO_ENVIRONMENT_SETTING = 'qbo-environment'
+
+/**
+ * The two environments, in the order the selector offers them.
+ *
+ * The labels say what the person gets, not what Intuit calls it. "Sandbox" alone means nothing to
+ * somebody who has never seen a developer portal, and "Production" reads like a setting rather than
+ * like a warning that the next batch lands in real books.
+ */
+export const QBO_ENVIRONMENT_OPTIONS: ReadonlyArray<{ id: QboEnvironment; label: string }> = [
+  { id: 'sandbox', label: 'Sandbox (testing)' },
+  { id: 'production', label: 'Live QuickBooks' }
+]
+
+/** Shown under the selector whenever Live is the chosen environment. Calm, and specific. */
+export const QBO_LIVE_WARNING =
+  'Live mode connects to a real QuickBooks company. Entries you send will appear in its books.'
+
+/**
+ * The confirm shown before a switch that throws away a working connection.
+ *
+ * It states the consequence rather than asking "are you sure": the tokens are issued for one
+ * environment's app keys and are dead in the other, so the disconnect is not a precaution the user
+ * can decline.
+ */
+export const QBO_SWITCH_CONFIRM = 'Switching disconnects the current QuickBooks company.'
+
+/** What the card says after a switch lands. Pure and exported so the wording is testable. */
+export function environmentSwitchNotice(environment: QboEnvironment): string {
+  return environment === 'production'
+    ? 'Now set to Live QuickBooks. Choose Connect to sign in to your real company.'
+    : 'Now set to the sandbox. Choose Connect to sign in to the Intuit test company.'
+}
+
+/**
  * The connection chip's text. Pure and exported so the wording is testable without a DOM.
  *
  * 'expired' says "Reconnect needed" rather than "Not connected" on purpose: the fix is one click on
@@ -170,9 +212,16 @@ export function SettingsScreen(): React.JSX.Element {
   const [qboClientSaved, setQboClientSaved] = useState(false)
   const [savingQboClient, setSavingQboClient] = useState(false)
   const [qboStatus, setQboStatus] = useState<QboStatus | null>(null)
-  const [qboBusy, setQboBusy] = useState<'connect' | 'disconnect' | 'sync' | null>(null)
+  const [qboBusy, setQboBusy] = useState<'connect' | 'disconnect' | 'sync' | 'environment' | null>(
+    null
+  )
   const [qboError, setQboError] = useState<string | null>(null)
   const [qboNotice, setQboNotice] = useState<string | null>(null)
+  // Which Intuit environment the app is pointed at, and the switch waiting on a confirm. Sandbox is
+  // the starting assumption for the same reason it is the main-side default: guessing wrong towards
+  // sandbox costs a failed request, guessing wrong towards live would mislabel a real company.
+  const [qboEnvironment, setQboEnvironmentState] = useState<QboEnvironment>('sandbox')
+  const [pendingEnvironment, setPendingEnvironment] = useState<QboEnvironment | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -236,6 +285,14 @@ export function SettingsScreen(): React.JSX.Element {
         if (!cancelled) setQboClientSaved(configured === '1')
       } catch {
         if (!cancelled) setQboClientSaved(false)
+      }
+      try {
+        const stored = await window.api.settings.get(QBO_ENVIRONMENT_SETTING)
+        // Anything other than the one literal reads as sandbox, mirroring parseQboEnvironment
+        // main-side: an unreadable setting must never render as Live.
+        if (!cancelled) setQboEnvironmentState(stored === 'production' ? 'production' : 'sandbox')
+      } catch {
+        if (!cancelled) setQboEnvironmentState('sandbox')
       }
     }
     void loadQbo()
@@ -310,6 +367,44 @@ export function SettingsScreen(): React.JSX.Element {
       setQboNotice('Disconnected. Your QuickBooks keys are still saved on this machine.')
     } catch (err) {
       setQboError(err instanceof Error ? err.message : 'Could not disconnect from QuickBooks.')
+    } finally {
+      setQboBusy(null)
+    }
+  }
+
+  /**
+   * Ask for a switch. A connected (or reconnect-needed) company means the switch throws a working
+   * authorization away, so it goes through the confirm first; from a disconnected state there is
+   * nothing to lose and the extra click would be noise.
+   */
+  function requestEnvironment(next: QboEnvironment): void {
+    if (next === qboEnvironment) return
+    if (qboStatus && qboStatus.state !== 'disconnected') {
+      setPendingEnvironment(next)
+      return
+    }
+    void applyEnvironment(next)
+  }
+
+  /**
+   * Perform the switch. One main-side call does both halves (clear the connection, record the new
+   * environment) so the two can never land separately, and the returned status is what the card
+   * renders rather than an assumption about what the switch did.
+   */
+  async function applyEnvironment(next: QboEnvironment): Promise<void> {
+    setPendingEnvironment(null)
+    setQboBusy('environment')
+    setQboError(null)
+    setQboNotice(null)
+    try {
+      const status = await window.api.qbo.setEnvironment(next)
+      setQboStatus(status)
+      setQboEnvironmentState(next)
+      setQboNotice(environmentSwitchNotice(next))
+    } catch (err) {
+      setQboError(
+        err instanceof Error ? err.message : 'Could not change the QuickBooks environment.'
+      )
     } finally {
       setQboBusy(null)
     }
@@ -669,7 +764,59 @@ export function SettingsScreen(): React.JSX.Element {
             Company id {qboStatus.realmId}
           </p>
         )}
+
+        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-4">
+          <label
+            htmlFor="qbo-environment"
+            className="font-sans text-sm font-medium text-foreground"
+          >
+            QuickBooks company
+          </label>
+          <select
+            id="qbo-environment"
+            className={FIELD_CLASS}
+            disabled={qboBusy !== null}
+            value={qboEnvironment}
+            onChange={(e) => requestEnvironment(e.target.value as QboEnvironment)}
+          >
+            {QBO_ENVIRONMENT_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {qboEnvironment === 'production' ? (
+            <p className="font-sans text-sm text-muted-foreground">{QBO_LIVE_WARNING}</p>
+          ) : (
+            <p className="font-sans text-sm text-muted-foreground">
+              Sandbox is the Intuit test company. Nothing you send there touches real books.
+            </p>
+          )}
+        </div>
       </div>
+
+      {pendingEnvironment && (
+        <div
+          role="alertdialog"
+          aria-label="Confirm QuickBooks environment change"
+          className="max-w-xl rounded-xl border border-border bg-card p-4"
+        >
+          <p className="font-sans text-sm font-semibold text-card-foreground">
+            {QBO_SWITCH_CONFIRM}
+          </p>
+          <p className="mt-1 font-sans text-sm text-muted-foreground">
+            Your QuickBooks app keys stay saved on this machine. You can connect again at any time.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button variant="outline" onClick={() => void applyEnvironment(pendingEnvironment)}>
+              Switch and disconnect
+            </Button>
+            <Button variant="ghost" onClick={() => setPendingEnvironment(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={qboBusy !== null} onClick={() => void connectQuickBooks()}>

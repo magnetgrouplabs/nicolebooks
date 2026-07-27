@@ -10,9 +10,13 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  environmentSwitchNotice,
   formatSyncTime,
   qboStatusLabel,
-  qboSyncSummary
+  qboSyncSummary,
+  QBO_ENVIRONMENT_OPTIONS,
+  QBO_LIVE_WARNING,
+  QBO_SWITCH_CONFIRM
 } from '../src/renderer/src/screens/SettingsScreen'
 import type { QboStatus } from '../src/shared/ipc-contract'
 
@@ -79,6 +83,36 @@ describe('formatSyncTime', () => {
   })
 })
 
+describe('the environment selector', () => {
+  it('offers exactly two options, in plain words rather than portal jargon', () => {
+    expect(QBO_ENVIRONMENT_OPTIONS.map((o) => o.id)).toEqual(['sandbox', 'production'])
+    expect(QBO_ENVIRONMENT_OPTIONS.map((o) => o.label)).toEqual([
+      'Sandbox (testing)',
+      'Live QuickBooks'
+    ])
+  })
+
+  it('warns, calmly and specifically, about what Live actually means', () => {
+    // The consequence a person needs before they pick it, not after: entries land in real books.
+    expect(QBO_LIVE_WARNING).toBe(
+      'Live mode connects to a real QuickBooks company. Entries you send will appear in its books.'
+    )
+  })
+
+  it('states the consequence of switching rather than asking whether they are sure', () => {
+    // The disconnect is not a precaution that can be declined: tokens issued by one environment's
+    // app keys are dead in the other.
+    expect(QBO_SWITCH_CONFIRM).toBe('Switching disconnects the current QuickBooks company.')
+  })
+
+  it('says what to do next after a switch, for each direction', () => {
+    expect(environmentSwitchNotice('production')).toMatch(/Live QuickBooks/)
+    expect(environmentSwitchNotice('production')).toMatch(/Connect/)
+    expect(environmentSwitchNotice('sandbox')).toMatch(/sandbox/i)
+    expect(environmentSwitchNotice('sandbox')).toMatch(/Connect/)
+  })
+})
+
 describe('no em dashes or en dashes in any of the card copy', () => {
   const samples = [
     qboStatusLabel(CONNECTED),
@@ -87,7 +121,12 @@ describe('no em dashes or en dashes in any of the card copy', () => {
     qboStatusLabel(null),
     qboSyncSummary({ vendors: 1, expenseAccounts: 2, paymentAccounts: 3, items: 4, syncedAt: 'x' }),
     formatSyncTime(null),
-    formatSyncTime('2026-07-27T20:17:07.067Z')
+    formatSyncTime('2026-07-27T20:17:07.067Z'),
+    QBO_LIVE_WARNING,
+    QBO_SWITCH_CONFIRM,
+    environmentSwitchNotice('production'),
+    environmentSwitchNotice('sandbox'),
+    ...QBO_ENVIRONMENT_OPTIONS.map((option) => option.label)
   ]
 
   it.each(samples)('%s is free of em dashes and en dashes', (copy) => {

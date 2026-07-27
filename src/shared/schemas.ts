@@ -171,6 +171,15 @@ export const QboSyncReferenceSchema = z.object({}).strict()
 /** qbo:get-reference payload gate. */
 export const QboGetReferenceSchema = z.object({}).strict()
 
+/**
+ * qbo:set-environment payload gate. The ONE qbo channel that takes input, and the enum is the whole
+ * point of the gate: this value selects which Intuit host every later request is sent to, so it may
+ * only ever be one of two literals. A free-form string here would be a renderer-supplied host.
+ */
+export const QboSetEnvironmentSchema = z
+  .object({ environment: z.enum(['sandbox', 'production']) })
+  .strict()
+
 // --- recon -------------------------------------------------------------------
 
 /**

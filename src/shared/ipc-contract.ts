@@ -56,6 +56,11 @@ export const Channels = {
   qboSyncReference: 'qbo:sync-reference',
   qboGetReference: 'qbo:get-reference',
   qboStatusChanged: 'qbo:status-changed', // main->renderer broadcast (mirrors themeChanged)
+  // Added by PROD-MODE (finish sprint): point the app at the sandbox or at a live QuickBooks
+  // company. It is a WRITE channel rather than an ordinary setting because switching must clear
+  // the stored connection in the same main-side step (tokens issued for one environment are dead
+  // in the other), and a renderer cannot be trusted to do those two things in order.
+  qboSetEnvironment: 'qbo:set-environment',
   // recon channel group: reconcile parsed vendor/category text against the cached QBO reference
   // lists. Takes file hashes only, so no parsed field values are re-sent across the boundary.
   reconMatch: 'recon:match',
@@ -304,6 +309,16 @@ export interface ParseApi {
  */
 export type QboConnectionState = 'disconnected' | 'connected' | 'expired'
 
+/**
+ * Which Intuit environment the app talks to.
+ *
+ * 'sandbox' is Intuit's test company: real API, fake books, nothing a person relies on. 'production'
+ * is a real QuickBooks company, where an entry this app sends is an entry in somebody's actual
+ * accounting. The two use different API hosts, different app keys, and different redirect
+ * addresses, which is why this is one explicit choice rather than an inference.
+ */
+export type QboEnvironment = 'sandbox' | 'production'
+
 /** The single status object every qbo channel (and the qbo:status-changed broadcast) returns. */
 export interface QboStatus {
   state: QboConnectionState
@@ -370,6 +385,18 @@ export interface QboApi {
   disconnect(): Promise<QboStatus>
   syncReference(): Promise<QboSyncResult>
   getReference(): Promise<QboReference>
+  /**
+   * Point the app at the sandbox or at a live QuickBooks company, and return the resulting status.
+   *
+   * A real change disconnects: the stored tokens belong to one environment's app keys and are dead
+   * in the other, so they are cleared in the same main-side step rather than left to fail later as
+   * an unexplained authorization error. The returned status is therefore 'disconnected' whenever
+   * the value actually changed. Setting the environment it is already on is a no-op.
+   *
+   * The CURRENT environment is read back over the ordinary settings channel under the non-secret
+   * key 'qbo-environment', which is where it is stored.
+   */
+  setEnvironment(environment: QboEnvironment): Promise<QboStatus>
   onStatusChanged(cb: (status: QboStatus) => void): () => void
 }
 

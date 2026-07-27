@@ -103,7 +103,10 @@ vi.mock('../src/main/qbo/service', () => ({
     items: [],
     syncedAt: null
   }),
-  markConnectionExpired: (): void => {}
+  markConnectionExpired: (): void => {},
+  // PROD-MODE: the sandbox/live switch. Mocked to a plain status so the seam file keeps asserting
+  // only the two gates; the disconnect-on-switch behaviour is covered in test/qbo-environment.test.ts.
+  setEnvironment: () => QBO_STATUS
 }))
 
 /**
@@ -198,6 +201,9 @@ describe('every finish-sprint channel is registered', () => {
     Channels.qboDisconnect,
     Channels.qboSyncReference,
     Channels.qboGetReference,
+    // Added by PROD-MODE (finish sprint). The pin below counts registrations, so a channel that
+    // lands without this line goes red, which is the point of the count.
+    Channels.qboSetEnvironment,
     Channels.reconMatch,
     Channels.postingSend,
     Channels.postingBatches,

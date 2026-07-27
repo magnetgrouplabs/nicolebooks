@@ -1,14 +1,17 @@
 // src/main/ipc/qbo.ts
 //
-// qbo channel group: status / connect / disconnect / sync-reference / get-reference, plus the
-// qbo:status-changed broadcast.
+// qbo channel group: status / connect / disconnect / sync-reference / get-reference /
+// set-environment, plus the qbo:status-changed broadcast.
 //
 // Every handler runs assertTrustedSender(event) as its FIRST statement (mirroring settings.ts /
-// ingestion.ts / ai.ts), then Zod-parses. All five channels are payload-free by design: the
+// ingestion.ts / ai.ts), then Zod-parses. Five of the six channels are payload-free by design: the
 // connection is resolved server-side from the encrypted token store, so there is nothing
 // legitimate for the renderer to send. Each parses `raw ?? {}` rather than a bare `raw`, because
 // the preload invokes them with no argument at all -- parsing bare `raw` against a strict-empty
 // schema is what shipped ingestion:scan permanently-rejecting for a whole phase.
+//
+// qbo:set-environment is the exception, and its payload is a two-value enum rather than a string,
+// because the value chooses which Intuit host every later request is sent to.
 //
 // SECRET BOUNDARY (mirrors ai.ts, D-05 / threat T-03-01): no handler here accepts or returns the
 // QuickBooks access token, refresh token, or client secret. Those are read main-side only where a
@@ -29,6 +32,7 @@ import {
   QboConnectSchema,
   QboDisconnectSchema,
   QboGetReferenceSchema,
+  QboSetEnvironmentSchema,
   QboStatusSchema,
   QboSyncReferenceSchema
 } from '../../shared/schemas'
@@ -41,6 +45,7 @@ import {
   QBO_CLIENT_CREDENTIALS_MISSING,
   QBO_NOT_CONNECTED,
   QBO_REAUTH_REQUIRED,
+  QBO_REDIRECT_URI_MISMATCH,
   QBO_REQUEST_FAILED,
   QBO_SECRET_STORE_UNAVAILABLE,
   QBO_SYNC_FAILED,
@@ -53,6 +58,7 @@ import {
   getReference,
   markConnectionExpired,
   readStatus,
+  setEnvironment,
   syncReference,
   type QboServiceDeps
 } from '../qbo/service'
@@ -90,6 +96,11 @@ export const QBO_ERROR_COPY: Readonly<Record<string, string>> = {
     'Could not refresh your QuickBooks connection just now. Check your internet connection, then try again.',
   [QBO_TOKEN_EXCHANGE_FAILED]:
     'QuickBooks would not complete the sign in. Check the client id and client secret in Settings, then try again.',
+  // The first-run production mistake. Production and development keys carry SEPARATE redirect
+  // lists in the Intuit portal, and a production app that was set up from a sandbox walkthrough
+  // usually has neither address on the production list. Naming the fix beats naming the fault.
+  [QBO_REDIRECT_URI_MISMATCH]:
+    'The Intuit app is missing the NicoleBooks redirect address. Add both redirect addresses in the Intuit developer portal, then try again.',
   [QBO_CALLBACK_PORT_BUSY]:
     'Another program on this computer is using the port NicoleBooks needs to finish signing in. Close it, or restart the computer, then try again.',
   [QBO_AUTH_CANCELED]: 'The QuickBooks sign in was closed before it finished. Try connecting again.',
@@ -192,5 +203,17 @@ export function registerQboIpc(): void {
     assertTrustedSender(event)
     QboGetReferenceSchema.parse(raw ?? {})
     return runQboOperation(() => getReference())
+  })
+
+  // The one qbo channel that takes input, and the enum gate is why: this value selects which Intuit
+  // host every later request goes to. A real change clears the stored connection main-side in the
+  // same step, so the renderer cannot end up holding "connected" against an environment whose
+  // tokens were never valid, and the resulting status is broadcast like any other change.
+  ipcMain.handle(Channels.qboSetEnvironment, async (event, raw) => {
+    assertTrustedSender(event)
+    const payload = QboSetEnvironmentSchema.parse(raw ?? {})
+    const status = await runQboOperation(() => setEnvironment(payload.environment))
+    broadcastQboStatus(status)
+    return status
   })
 }

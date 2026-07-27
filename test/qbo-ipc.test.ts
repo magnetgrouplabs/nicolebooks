@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   syncReference: vi.fn(),
   getReference: vi.fn(),
   markConnectionExpired: vi.fn(),
+  setEnvironment: vi.fn(),
   openExternal: vi.fn()
 }))
 
@@ -69,7 +70,8 @@ vi.mock('../src/main/qbo/service', () => ({
   disconnect: mocks.disconnect,
   syncReference: mocks.syncReference,
   getReference: mocks.getReference,
-  markConnectionExpired: mocks.markConnectionExpired
+  markConnectionExpired: mocks.markConnectionExpired,
+  setEnvironment: mocks.setEnvironment
 }))
 
 import { QBO_ERROR_COPY, registerQboIpc, runQboOperation } from '../src/main/ipc/qbo'
@@ -103,6 +105,7 @@ beforeEach(() => {
     mocks.syncReference,
     mocks.getReference,
     mocks.markConnectionExpired,
+    mocks.setEnvironment,
     mocks.openExternal
   ]) {
     fn.mockReset()
@@ -264,6 +267,34 @@ describe('the handlers', () => {
       handlerFor(Channels.qboSyncReference)(FAKE_EVENT, { realmId: '999' })
     ).rejects.toThrow()
     expect(mocks.syncReference).not.toHaveBeenCalled()
+  })
+
+  it('qbo:set-environment applies the choice and broadcasts the resulting status', async () => {
+    mocks.setEnvironment.mockReturnValue(DISCONNECTED)
+    await expect(
+      handlerFor(Channels.qboSetEnvironment)(FAKE_EVENT, { environment: 'production' })
+    ).resolves.toEqual(DISCONNECTED)
+    expect(mocks.setEnvironment).toHaveBeenCalledWith('production')
+    expect(mocks.sends).toEqual([{ channel: Channels.qboStatusChanged, payload: DISCONNECTED }])
+  })
+
+  it('qbo:set-environment refuses anything but the two known environments', async () => {
+    // This payload chooses which Intuit host every later request is sent to, so the gate is the
+    // difference between a two-value enum and a renderer-supplied destination.
+    for (const payload of [
+      { environment: 'prod' },
+      { environment: 'https://evil.example' },
+      { environment: 'PRODUCTION' },
+      { environment: 'production', extra: 1 },
+      {},
+      undefined
+    ]) {
+      await expect(
+        handlerFor(Channels.qboSetEnvironment)(FAKE_EVENT, payload)
+      ).rejects.toThrow()
+    }
+    expect(mocks.setEnvironment).not.toHaveBeenCalled()
+    expect(mocks.sends).toEqual([])
   })
 
   it('surfaces a failed connect as mapped copy without broadcasting a bogus status', async () => {

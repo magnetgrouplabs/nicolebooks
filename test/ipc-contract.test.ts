@@ -143,6 +143,9 @@ describe('Channels are stable strings', () => {
       qboSyncReference: 'qbo:sync-reference',
       qboGetReference: 'qbo:get-reference',
       qboStatusChanged: 'qbo:status-changed',
+      // Added by PROD-MODE (finish sprint): sandbox or live company. The pin is the point, because
+      // this is the one channel whose payload chooses which Intuit host the app talks to.
+      qboSetEnvironment: 'qbo:set-environment',
       reconMatch: 'recon:match',
       postingSend: 'posting:send',
       postingProgress: 'posting:progress',
