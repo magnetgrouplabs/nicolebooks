@@ -28,12 +28,26 @@
 // (default = done and good, secondary = benign, destructive = needs you, outline = skipped) instead
 // of a row wearing four badges at once. The editable review table is still Phase 6.
 //
+// Getting bills IN (finish sprint, INGEST-UX): the folder is no longer the only way in, and no
+// longer the first thing the screen asks of the user. Two additions sit beside "Scan now":
+//
+//   "Add files"      opens the native OS picker in MAIN, copies what was chosen into the managed
+//                    inbox, then rescans. The renderer never sees or sends a path, so the T-02-02
+//                    path-injection guard is unchanged.
+//   "Add from phone" starts a LAN-only upload server in main and shows its QR code. Every file the
+//                    phone sends arrives on the upload:received broadcast, which bumps a live count
+//                    and fires a rescan, so a photo taken on the phone appears in this list without
+//                    the user touching the computer.
+//
+// The folder path is still displayed, because a user who wants to drag files in should not have to
+// hunt for it, but it is no longer the instruction.
+//
 // The renderer performs zero direct fs/db access — every privileged operation runs main-side
 // behind the ingestion IPC group. All colors are semantic theme classes (no hardcoded hex).
 
 import { useEffect, useRef, useState } from 'react'
 
-import { Receipt } from 'lucide-react'
+import { FilePlus, Receipt, Smartphone } from 'lucide-react'
 
 import { EmptyState } from '../components/EmptyState'
 import { Badge } from '../components/ui/badge'
@@ -43,6 +57,7 @@ import type {
   ParseFileResult,
   ParseProgress,
   ParsedFields,
+  PickFilesResult,
   ScanFile,
   ScanFileStatus,
   ScanResult
@@ -423,6 +438,172 @@ export function ScanButton({
   )
 }
 
+/**
+ * The "Add files" control. Disabled while a scan or a parse is in flight for the same reason
+ * "Scan now" is (WR-07): the picker rescans when it finishes, and a rescan landing on top of a
+ * running parse batch is the concurrency bug that spec exists to prevent.
+ */
+export function AddFilesButton({
+  adding,
+  busy,
+  onAdd
+}: {
+  adding: boolean
+  busy: boolean
+  onAdd: () => void
+}): React.JSX.Element {
+  return (
+    <Button variant="outline" disabled={adding || busy} onClick={onAdd}>
+      <FilePlus />
+      {adding ? 'Adding...' : 'Add files'}
+    </Button>
+  )
+}
+
+/** The "Add from phone" control. Same busy rule as the picker, for the same rescan reason. */
+export function AddFromPhoneButton({
+  busy,
+  onOpen
+}: {
+  busy: boolean
+  onOpen: () => void
+}): React.JSX.Element {
+  return (
+    <Button variant="outline" disabled={busy} onClick={onOpen}>
+      <Smartphone />
+      Add from phone
+    </Button>
+  )
+}
+
+/**
+ * What to tell the user after the picker closes.
+ *
+ * A cancel returns null and the screen says NOTHING: the user changed their mind and a message
+ * about it is noise. Everything else is reported, including the skips, by name. A file that
+ * silently fails to arrive is the failure that costs the most trust, because there is no way for
+ * the user to notice it happened.
+ */
+export function addFilesNotice(result: PickFilesResult): string | null {
+  const { added, skipped } = result
+  if (added === 0 && skipped.length === 0) return null
+
+  const addedPart =
+    added === 0
+      ? 'Nothing was added.'
+      : `Added ${added} ${added === 1 ? 'file' : 'files'} to your inbox.`
+  if (skipped.length === 0) return addedPart
+
+  const noun = skipped.length === 1 ? 'file was' : 'files were'
+  return `${addedPart} ${skipped.length} ${noun} skipped, because NicoleBooks only takes PDF files and photos: ${skipped.join(', ')}`
+}
+
+/** The live tally inside the phone-upload panel. Plain counting, no jargon. */
+export function phoneReceivedLine(count: number): string {
+  if (count === 0) return 'Nothing sent yet. Point your phone camera at the code to begin.'
+  if (count === 1) return '1 file received so far.'
+  return `${count} files received so far.`
+}
+
+/**
+ * The phone-upload panel.
+ *
+ * A plain overlay rather than a component from components/ui, because this build has no Dialog
+ * primitive yet. DESIGN wave: this is the first modal in the app and is the obvious place to
+ * introduce one; the markup below is deliberately structural so restyling it does not mean
+ * rewriting behaviour.
+ *
+ * The URL is printed as selectable text beside the QR code, because a phone whose camera cannot
+ * read a screen (glare, a cracked lens, an older Android) still needs a way in, and reading twelve
+ * characters off a screen is that way. It is in a monospace face for the same reason.
+ */
+export function PhoneUploadPanel({
+  starting,
+  url,
+  qrDataUrl,
+  receivedCount,
+  error,
+  onDone
+}: {
+  starting: boolean
+  url: string | null
+  qrDataUrl: string | null
+  receivedCount: number
+  error: string | null
+  onDone: () => void
+}): React.JSX.Element {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="phone-upload-heading"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+    >
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg">
+        <div className="flex flex-col gap-1">
+          <h2
+            id="phone-upload-heading"
+            className="font-heading text-lg font-semibold text-card-foreground"
+          >
+            Add from phone
+          </h2>
+          <p className="font-sans text-sm text-muted-foreground">
+            Point your phone camera at the code, then take a photo of the bill or pick files already
+            on your phone. They land in your inbox here.
+          </p>
+        </div>
+
+        {starting && (
+          <p className="font-sans text-sm text-muted-foreground" aria-live="polite">
+            Starting phone upload...
+          </p>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          >
+            {error}
+          </p>
+        )}
+
+        {qrDataUrl && (
+          <div className="flex justify-center rounded-lg border border-border bg-background p-3">
+            {/* A self-contained data: URI, so the renderer fetches nothing to draw it. */}
+            <img src={qrDataUrl} alt="Code to scan with your phone camera" className="size-56" />
+          </div>
+        )}
+
+        {url && (
+          <div className="flex flex-col gap-1">
+            <p className="font-sans text-sm text-muted-foreground">
+              Or type this into your phone browser:
+            </p>
+            <p className="font-mono text-sm break-all text-card-foreground select-all">{url}</p>
+          </div>
+        )}
+
+        <p className="font-sans text-sm font-medium text-foreground" aria-live="polite">
+          {phoneReceivedLine(receivedCount)}
+        </p>
+
+        <p className="font-sans text-sm text-muted-foreground">
+          The first time you use this, Windows may ask whether to allow NicoleBooks on your network.
+          Choose Allow, or your phone will not be able to reach this computer. Your phone and this
+          computer need to be on the same Wi-Fi.
+        </p>
+
+        <div className="flex justify-end">
+          <Button variant="default" onClick={onDone}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function BillsScreen(): React.JSX.Element {
   const [inboxPath, setInboxPath] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -439,6 +620,20 @@ export function BillsScreen(): React.JSX.Element {
   const [retrying, setRetrying] = useState<Set<string>>(new Set())
   // Guards runParse against re-entry; see the note in runParse.
   const parsingRef = useRef(false)
+  // "Add files" (native picker) state.
+  const [adding, setAdding] = useState(false)
+  const [addNotice, setAddNotice] = useState<string | null>(null)
+  // "Add from phone" state. The server itself lives in main; none of this is a path or a port.
+  const [phoneOpen, setPhoneOpen] = useState(false)
+  const [phoneStarting, setPhoneStarting] = useState(false)
+  const [phoneUrl, setPhoneUrl] = useState<string | null>(null)
+  const [phoneQr, setPhoneQr] = useState<string | null>(null)
+  const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [phoneReceived, setPhoneReceived] = useState(0)
+  // Lets the mount-once upload:received subscription call the CURRENT runScan. Subscribing with
+  // runScan in the dependency list would tear down and re-add the listener on every render, and a
+  // phone upload landing in that gap would be missed.
+  const rescanRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     let cancelled = false
@@ -462,6 +657,22 @@ export function BillsScreen(): React.JSX.Element {
   useEffect(() => {
     return window.api.parse.onProgress((progress) => {
       setParseProgress(progress)
+    })
+  }, [])
+
+  // Keep the rescan hook pointing at the latest closure. Runs after every render, deliberately
+  // without a dependency list.
+  useEffect(() => {
+    rescanRef.current = () => void runScan()
+  })
+
+  // The upload:received broadcast. Subscribed exactly like parse.onProgress, and exactly once: the
+  // disposer means a remount cannot leave a second listener counting behind it. Each broadcast is
+  // one completed phone request, so the rescan fires once per request, not once per file.
+  useEffect(() => {
+    return window.api.upload.onReceived((received) => {
+      setPhoneReceived((count) => count + received.filenames.length)
+      rescanRef.current()
     })
   }, [])
 
@@ -556,6 +767,60 @@ export function BillsScreen(): React.JSX.Element {
     }
   }
 
+  /**
+   * "Add files": open the native picker in main, then rescan so the copies show up immediately.
+   * The rescan is skipped when nothing was added, so a cancel costs nothing.
+   */
+  async function addFiles(): Promise<void> {
+    setAdding(true)
+    setAddNotice(null)
+    try {
+      const result = await window.api.ingestion.pickFiles()
+      setAddNotice(addFilesNotice(result))
+      if (result.added > 0) await runScan()
+    } catch {
+      setAddNotice('Could not add those files to your inbox. Please try again.')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  /** Open the phone panel and start the LAN server. The count resets per session, like the QR. */
+  async function openPhoneUpload(): Promise<void> {
+    setPhoneOpen(true)
+    setPhoneStarting(true)
+    setPhoneError(null)
+    setPhoneReceived(0)
+    try {
+      const started = await window.api.upload.start()
+      setPhoneUrl(started.url)
+      setPhoneQr(started.qrDataUrl)
+    } catch {
+      setPhoneError(
+        'Could not start phone upload just now. Check that you are connected to a network, then try again.'
+      )
+    } finally {
+      setPhoneStarting(false)
+    }
+  }
+
+  /**
+   * Close the panel and stop the server. The URL is the whole credential, so it stops existing the
+   * moment the panel that shows it closes. A failed stop is swallowed on purpose: main also stops
+   * the server on its idle timer and on app quit, so there is nothing useful to ask the user to do.
+   */
+  async function closePhoneUpload(): Promise<void> {
+    setPhoneOpen(false)
+    setPhoneUrl(null)
+    setPhoneQr(null)
+    setPhoneError(null)
+    try {
+      await window.api.upload.stop()
+    } catch {
+      /* the idle timer and the quit hook both close it too */
+    }
+  }
+
   function toggleInclude(file: ScanFile): void {
     const key = fileKey(file)
     setIncludedOverrides((prev) => {
@@ -598,15 +863,43 @@ export function BillsScreen(): React.JSX.Element {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h2 className="font-sans text-sm font-semibold text-muted-foreground">Inbox</h2>
           <p className="font-mono text-sm text-muted-foreground">
             {inboxPath ?? 'Locating your inbox folder...'}
           </p>
         </div>
-        <ScanButton scanning={scanning} parsing={parsing} onScan={() => void runScan()} />
+        <div className="flex flex-wrap items-center gap-2">
+          <AddFilesButton
+            adding={adding}
+            busy={scanning || parsing}
+            onAdd={() => void addFiles()}
+          />
+          <AddFromPhoneButton
+            busy={scanning || parsing || phoneOpen}
+            onOpen={() => void openPhoneUpload()}
+          />
+          <ScanButton scanning={scanning} parsing={parsing} onScan={() => void runScan()} />
+        </div>
       </div>
+
+      {addNotice && (
+        <p className="rounded-lg border border-border bg-card px-3 py-2 font-sans text-sm text-card-foreground">
+          {addNotice}
+        </p>
+      )}
+
+      {phoneOpen && (
+        <PhoneUploadPanel
+          starting={phoneStarting}
+          url={phoneUrl}
+          qrDataUrl={phoneQr}
+          receivedCount={phoneReceived}
+          error={phoneError}
+          onDone={() => void closePhoneUpload()}
+        />
+      )}
 
       {scanError && (
         <p
@@ -630,7 +923,7 @@ export function BillsScreen(): React.JSX.Element {
         <EmptyState
           icon={Receipt}
           heading="No bills to review"
-          body="Drop bills into your inbox folder, then click Scan now to load them for review."
+          body="Use Add files to pick bills from this computer, or Add from phone to send a photo. You can also drop files straight into the inbox folder, then click Scan now."
         />
       )}
 
@@ -638,7 +931,7 @@ export function BillsScreen(): React.JSX.Element {
         <EmptyState
           icon={Receipt}
           heading="No files in your inbox yet"
-          body="Drop bills into your inbox folder, then click Scan now to load them for review."
+          body="Use Add files to pick bills from this computer, or Add from phone to send a photo. You can also drop files straight into the inbox folder, then click Scan now."
         />
       )}
 
