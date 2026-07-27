@@ -849,29 +849,22 @@ export function BillsScreen({
             />
           )}
 
-          {/* WHILE THE MODEL IS STILL READING, the plain scan rows are the honest surface: there
-              are no parse results yet, so a review row would show a dozen empty fields and tell the
-              user each one still needs something. The moment the batch settles, the same documents
-              are re-rendered as the editable review table below. */}
-          {parsing && loadedFiles.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {loadedFiles.map((file) => (
-                <ScanRow
-                  key={file.filename}
-                  file={file}
-                  parse={file.hash ? parseResults[file.hash] : undefined}
-                />
-              ))}
-            </ul>
-          )}
-
           {/* THE REVIEW SURFACE (Phase 6). Everything the app guessed, beside a control that
-              changes it, above one button that says exactly what it will do. */}
-          {!parsing && reviewFiles.length > 0 && (
+              changes it, above one button that says exactly what it will do. It replaces the plain
+              scan list for loaded documents rather than sitting under it: two lists of the same
+              bills would be two places to look for the same fact.
+
+              It is rendered WHILE A PARSE IS RUNNING too, with busy set, which is not cosmetic. A
+              phone upload arriving mid-review fires a rescan and a re-parse; unmounting the table
+              for the duration would throw away every correction the user had already made. Busy
+              suppresses the "still needed" lines, because nothing is missing while the reading is
+              still going on. */}
+          {reviewFiles.length > 0 && (
             <ReviewTable
               files={reviewFiles}
               batchEntryDate={result.batchEntryDate}
               parseResults={parseResults}
+              busy={parsing}
               retrying={retrying}
               onRetry={(fileHash) => {
                 const file = reviewFiles.find((candidate) => candidate.hash === fileHash)

@@ -230,6 +230,7 @@ export function ReviewRowCard({
   sendState,
   sendError,
   retrying = false,
+  busy = false,
   onRetry,
   onEdit
 }: {
@@ -241,11 +242,15 @@ export function ReviewRowCard({
   sendState?: PostingEntryState
   sendError?: string | null
   retrying?: boolean
+  /** The batch is still being read. Nothing is missing yet, so nothing is reported missing. */
+  busy?: boolean
   onRetry?: () => void
   onEdit: (patch: ReviewEdit) => void
 }): React.JSX.Element {
   const flags = flaggedFields(row.parse)
-  const gap = row.included ? rowGap(row) : null
+  // While the model is still reading, every row is legitimately empty. Telling the user that each
+  // one needs a vendor, a category and an amount would be a wall of red about work in progress.
+  const gap = row.included && !busy ? rowGap(row) : null
   const chip = sendState ? sendStateChip(sendState) : null
   const failed = row.parse?.status === 'parse-failed'
 
@@ -364,16 +369,21 @@ export function ReviewRowCard({
  * explanation is the single most common way a screen makes a user feel stupid, and the reason here
  * is always something they can fix in one click.
  */
+export const STILL_READING = 'Still reading your bills. This will be ready in a moment.'
+
 export function ReviewFooter({
   rows,
   sending,
+  busy = false,
   onSend
 }: {
   rows: readonly ReviewRow[]
   sending: boolean
+  /** The batch is still being read, so there is nothing complete to send yet. */
+  busy?: boolean
   onSend: () => void
 }): React.JSX.Element {
-  const gate = sendGate(rows)
+  const gate = busy ? { canSend: false, reason: STILL_READING } : sendGate(rows)
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -499,6 +509,7 @@ export function ReviewTable({
   files,
   batchEntryDate,
   parseResults,
+  busy = false,
   retrying,
   onRetry,
   onOpenHistory
@@ -506,6 +517,15 @@ export function ReviewTable({
   files: readonly ScanFile[]
   batchEntryDate: string
   parseResults: Readonly<Record<string, ParseFileResult>>
+  /**
+   * A parse batch is running, so the fields are not filled in yet.
+   *
+   * This component stays MOUNTED while that is true, which is the whole reason the flag exists. A
+   * phone upload arriving mid-review triggers a rescan and a re-parse, and unmounting here would
+   * throw away every correction the user had already made. The edits are keyed by file hash and
+   * survive the re-seed; they cannot survive an unmount.
+   */
+  busy?: boolean
   /** File hashes with a re-parse in flight, so the row's Retry control can say so. */
   retrying?: ReadonlySet<string>
   onRetry?: (fileHash: string) => void
@@ -567,10 +587,14 @@ export function ReviewTable({
     }
   }, [])
 
-  // Reconciliation, once per set of documents. A rejection leaves `matches` empty, which is exactly
-  // the manual-selection state, so there is nothing to report and nothing to recover from.
+  // Reconciliation, once per set of documents, and never while a parse is still running: recon
+  // reads the parsed vendor and category text from the main-side cache, so asking before the parse
+  // has written it would spend a round trip to be told 'none' about every row.
+  //
+  // A rejection leaves `matches` empty, which is exactly the manual-selection state, so there is
+  // nothing to report and nothing to recover from.
   useEffect(() => {
-    if (hashKey === '') return
+    if (busy || hashKey === '') return
     let cancelled = false
     async function match(): Promise<void> {
       try {
@@ -584,7 +608,7 @@ export function ReviewTable({
     return () => {
       cancelled = true
     }
-  }, [hashKey])
+  }, [busy, hashKey])
 
   // The duplicate check, debounced, because it re-runs while the user types an amount. Probes are
   // serialized into the dependency so an edit that does not change the three probed fields (a memo,
@@ -766,6 +790,7 @@ export function ReviewTable({
             warnings={duplicates[row.fileHash] ?? []}
             sendState={sendStates[row.fileHash]}
             sendError={sendErrors[row.fileHash] ?? null}
+            busy={busy}
             retrying={retrying?.has(row.fileHash) ?? false}
             onRetry={onRetry ? () => onRetry(row.fileHash) : undefined}
             onEdit={(patch) => editRow(row.fileHash, patch)}
@@ -781,7 +806,12 @@ export function ReviewTable({
           onCancel={() => setConfirming(false)}
         />
       ) : (
-        <ReviewFooter rows={rows} sending={sending} onSend={() => setConfirming(true)} />
+        <ReviewFooter
+          rows={rows}
+          sending={sending}
+          busy={busy}
+          onSend={() => setConfirming(true)}
+        />
       )}
     </div>
   )

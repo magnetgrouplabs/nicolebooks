@@ -28,6 +28,7 @@ import {
   NO_REFERENCE_NOTICE,
   ReviewFooter,
   ReviewRowCard,
+  STILL_READING,
   SendConfirm,
   TypeToggle,
   completionLine,
@@ -425,6 +426,43 @@ describe('the Send button', () => {
 // ---------------------------------------------------------------------------
 // The confirmation, the progress line, and the completion strip
 // ---------------------------------------------------------------------------
+
+describe('while the model is still reading', () => {
+  it('reports nothing missing, because nothing is missing yet', () => {
+    // Every row is legitimately empty mid-parse. A wall of "Still needed: pick a vendor" about work
+    // in progress would read as a screenful of errors.
+    const html = renderToStaticMarkup(
+      createElement(ReviewRowCard, {
+        row: resolveRow(seed({ vendorId: null, amountText: '' })),
+        vendorOptions: VENDORS,
+        categoryOptions: CATEGORIES,
+        paymentOptions: PAYMENTS,
+        warnings: [],
+        busy: true,
+        onEdit: () => {}
+      })
+    )
+    expect(html).not.toContain('Still needed')
+  })
+
+  it('holds Send back and says why, rather than blaming an empty row', () => {
+    const html = renderToStaticMarkup(
+      createElement(ReviewFooter, {
+        rows: [resolveRow(seed({ vendorId: null, amountText: '' }))],
+        sending: false,
+        busy: true,
+        onSend: () => {}
+      })
+    )
+    expect(isDisabled(html)).toBe(true)
+    expect(html).toContain(STILL_READING)
+    expect(html).not.toContain('pick a vendor')
+  })
+
+  it('says its piece without a dash', () => {
+    expect(STILL_READING).not.toMatch(/[—–]/)
+  })
+})
 
 describe('the send confirmation', () => {
   it('states the count, the split, and the money before anything leaves the app', () => {
