@@ -84,11 +84,23 @@ async function ensurePdfjs(): Promise<void> {
  * Whether that text is AUTHORITATIVE is not this function's call — route.ts decides that from the
  * signals below. A scan with an OCR overlay returns plenty of text here and must still be routed
  * image-only.
+ *
+ * The document is created HERE rather than by handing raw bytes to unpdf, because of the teardown
+ * rule in the note below `closeDocument`. Given bytes, unpdf builds a proxy internally
+ * (`const pdf = isPDFDocumentProxy(data) ? data : await getDocumentProxy(data)`) and never
+ * destroys it, and returns no handle, so the caller has nothing to tear down: one leaked loading
+ * task, transport, worker and retained copy of the PDF bytes per native-route bill, for the life
+ * of a main process that stays up for days.
  */
 export async function extractPdfText(bytes: Buffer): Promise<PdfText> {
   await ensurePdfjs()
-  const { totalPages, text } = await extractText(pdfjsBytes(bytes), { mergePages: false })
-  return { totalPages, text }
+  const doc = await getDocumentProxy(pdfjsBytes(bytes))
+  try {
+    const { totalPages, text } = await extractText(doc, { mergePages: false })
+    return { totalPages, text }
+  } finally {
+    await closeDocument(doc)
+  }
 }
 
 /**
