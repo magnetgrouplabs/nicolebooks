@@ -1,12 +1,15 @@
 // Plan 01-06 Task 1: the branded top bar (UI-SPEC Layout Frame + Copywriting Contract).
 // Quick task 260727-k05: the plain text wordmark is replaced by the real NicoleBooks logo.
 //
-// Structural contract: full width, 56px tall (the grid row in App.tsx), structural radius 0
+// Structural contract: full width, 72px tall (the grid row in App.tsx), structural radius 0
 // (never rounded), sits above content at z-index 20 (tokens.json elevation.nav = 20), on the
-// secondary surface. Left side carries the NicoleBooks logo lockup (crimson stiletto over
-// stacked pages, then the wordmark). Right side is the neutral connection-status slot: a filled
-// neutral dot plus the label "Not connected", a Phase 1 placeholder that Phase 4 replaces with
-// real QuickBooks health. All colors come from semantic theme classes; no hardcoded hex.
+// header surface. Left side carries the NicoleBooks logo lockup (crimson stiletto over stacked
+// pages, then the wordmark). Right side is the connection-status slot: a dot whose colour carries
+// the state, plus the company name. All colors come from semantic theme classes; no hardcoded hex.
+//
+// The row was 56px, tokens.json layout.navHeight, which is the Material/HIG value for a bar whose
+// left slot holds a 24px icon. This one holds a brand lockup, and at 56px the lockup had to shrink
+// to 36px to fit, which is how the app's own name ended up the smallest thing in its own header.
 //
 // Why the PNG and not the SVG: the supplied SVG is not usable. It carries no @font-face at all
 // (0 font faces load in Chromium), yet its wordmark is a live <text> element set in the
@@ -19,9 +22,6 @@
 
 import { useEffect, useState } from 'react'
 
-import { Circle } from 'lucide-react'
-
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import logoUrl from '@/assets/nicolebooks-logo-full.png'
 import type { QboStatus } from '@shared/ipc-contract'
@@ -106,24 +106,40 @@ function HeaderChrome({ status }: { status: QboStatus | null }): React.JSX.Eleme
         so the SURFACE is what gives: --header stays light in both themes (see globals.css).
         An earlier dark:brightness-0 dark:invert knockout flattened the stiletto to a
         featureless white blob and is gone for good. Do not reintroduce a filter here.
+
+        SIZE. The lockup renders at 48px tall (h-12) in a 72px bar, so it is a third larger than
+        the 36px it shipped at and still gains breathing room: 12px of clear space above and below
+        instead of 10px. The artwork itself is untouched; the bar around it grew to make room.
+        Its 3.02:1 aspect puts it at roughly 145px wide, which is the brand anchor this screen was
+        missing and not so large that it competes with the work.
       */}
       <img
         src={logoUrl}
         alt="NicoleBooks"
         width={LOGO_INTRINSIC_WIDTH}
         height={LOGO_INTRINSIC_HEIGHT}
-        className="h-9 w-auto"
+        className="h-12 w-auto"
       />
 
-      {/* Connection-status slot: a filled dot whose colour carries the state, plus the label. */}
-      <Badge
-        variant="outline"
+      {/*
+        The connection slot.
+
+        It reads WHICH BOOKS the next Send will touch, which makes it reference material, not a
+        status badge shouting for attention: a recessed capsule in the header's own ink at 70%,
+        with the state carried entirely by a 6px dot. It was an outlined pill in the Badge
+        component, which put a bordered chip in the top right competing with the wordmark for the
+        two things the eye lands on first.
+      */}
+      <p
         aria-live="polite"
-        className="h-6 max-w-[22rem] gap-1.5 truncate rounded-full border-header-foreground/20 px-2.5 text-sm font-normal text-header-foreground/70"
+        className="flex h-8 max-w-[24rem] items-center gap-2 rounded-full bg-header-foreground/[0.06] px-3 font-sans text-sm font-medium text-header-foreground/75"
       >
-        <Circle className={cn('shrink-0 fill-current', connectionTone(status))} aria-hidden="true" />
-        {connectionLabel(status)}
-      </Badge>
+        <span
+          aria-hidden="true"
+          className={cn('size-1.5 shrink-0 rounded-full bg-current', connectionTone(status))}
+        />
+        <span className="truncate">{connectionLabel(status)}</span>
+      </p>
     </header>
   )
 }

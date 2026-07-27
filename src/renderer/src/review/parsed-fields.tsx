@@ -12,6 +12,7 @@
 // BillsScreen re-exports flaggedFields and isFlagged, so the two specs that import them from there
 // keep working; this file is where they actually live now.
 
+import { cn } from '@/lib/utils'
 import { formatCents } from '@/lib/money'
 import type { ParseFileResult, ParsedFields } from '@shared/ipc-contract'
 
@@ -156,6 +157,22 @@ export function flaggedFields(parse?: ParseFileResult): Set<string> {
 }
 
 /**
+ * Fields whose value is a figure rather than a phrase: money, dates, and the invoice id.
+ *
+ * They render in the mono face with lining figures so a column of them lines up and a mistyped
+ * digit is visible at a glance. Everything else (a vendor, a category, a currency code) is prose
+ * and stays in the text face, because setting a company name in monospace is affectation.
+ */
+const FIGURE_FIELDS: ReadonlySet<string> = new Set<string>([
+  'invoiceNumber',
+  'invoiceDate',
+  'dueDate',
+  'subtotalCents',
+  'taxCents',
+  'totalCents'
+])
+
+/**
  * The parsed fields as a definition list.
  *
  * A definition list is the right semantics for label/value pairs, and it is what turns an
@@ -163,6 +180,19 @@ export function flaggedFields(parse?: ParseFileResult): Set<string> {
  * field. `flags` is computed ONCE by the caller for the whole row, not per field: a displayed
  * amount always travels with its flag, because displaying the value alone is worse than displaying
  * neither (it reads as a clean, confident parse).
+ *
+ * DESIGN WAVE, and this is the change that does the most for how the screen reads. The pairs were
+ * laid out inline in a wrapping row, which produced a single run-on line: "Vendor Apex Plumbing
+ * Supply Invoice number APX-84213 Invoice date 2026-07-23 Subtotal -$135.80 Tax -$11.71". Nine
+ * labels and nine values at the same size, in the same weight, with only a colourless 4px gap
+ * telling you which was which. Nobody checks a bill that way.
+ *
+ * It is now a grid of stacked pairs: the label above its value, set as a small tracked cap so it
+ * reads as a header rather than as more text, and the value below it in the face its content
+ * deserves. Total gets the emphasis, because Total is the number the user is actually here to
+ * agree with.
+ *
+ * The dt/dd pair stays adjacent with a plain text child, which is what three specs match on.
  */
 export function ParsedFieldList({
   fields,
@@ -172,20 +202,23 @@ export function ParsedFieldList({
   flags: ReadonlySet<string>
 }): React.JSX.Element {
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-0.5">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
       {FIELD_ORDER.map((field) => {
         const flagged = flags.has(field)
         const value = fieldValue(fields, field, flagged)
         if (value === null) return null
         return (
-          <div key={field} className="flex gap-1.5">
-            <dt className="font-sans text-sm text-muted-foreground">{FIELD_LABEL[field]}</dt>
+          <div key={field} className="flex min-w-0 flex-col gap-1">
+            <dt className="font-sans text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+              {FIELD_LABEL[field]}
+            </dt>
             <dd
-              className={
-                flagged
-                  ? 'font-sans text-sm text-destructive'
-                  : 'font-sans text-sm text-card-foreground'
-              }
+              className={cn(
+                'font-sans text-sm leading-tight break-words',
+                FIGURE_FIELDS.has(field) && 'font-mono',
+                field === 'totalCents' && 'text-[0.9375rem] font-semibold',
+                flagged ? 'text-destructive' : 'text-card-foreground'
+              )}
             >
               {flagged ? `${value} (needs review)` : value}
             </dd>

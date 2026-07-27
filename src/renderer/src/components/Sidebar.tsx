@@ -2,12 +2,17 @@
 //
 // Structural contract: fixed 280px wide, full height below the header, structural radius 0, on
 // the secondary surface. Three icon+text destinations (Bills, History, Settings); each item is
-// full width, min height 40px, with a 20px icon, a 14px label, a 12px gap and 12px horizontal
-// padding (tokens.json space.3 = 12px, space.10 = 40px). The active item gets violet text
-// (text-primary) plus a violet left-edge indicator bar and semibold weight. Hover uses the
-// primary tint at 6% opacity, pressed at 16% (tokens.json opacity.hover/pressed), transitioning
-// at 150ms with the standard easing. Keyboard focus uses the ring token at 32% (shadow.focus).
-// Every color is a semantic theme value; no hardcoded hex.
+// full width, 40px tall, with an 18px icon, a 14px label, and 24px horizontal padding so the icon
+// column lands under the logo's left edge in the header above it. Hover uses the primary tint at
+// 6% opacity, pressed at 16% (tokens.json opacity.hover/pressed), transitioning at 150ms with the
+// standard easing. Keyboard focus uses the ring token at 32% (shadow.focus). Every color is a
+// semantic theme value; no hardcoded hex.
+//
+// THE ACTIVE ITEM WAS UNREADABLE IN DARK MODE. It set `text-primary`, and --primary is the true
+// logo crimson #910023, which is 1.6:1 on the dark sidebar surface #2a2a2a: the current screen's
+// name was the least legible label in the app. It now uses --primary-vivid, the brand red at a
+// lightness the current surface can carry, on a tinted well, with the crimson rail kept because an
+// active-nav indicator is the one place brand colour belongs unconditionally.
 
 import type { ComponentType } from 'react'
 
@@ -39,7 +44,7 @@ export function Sidebar({ active, onSelect }: SidebarProps): React.JSX.Element {
   return (
     <nav
       aria-label="Primary"
-      className="col-start-1 row-start-2 w-[280px] rounded-none border-r border-border bg-secondary py-2"
+      className="col-start-1 row-start-2 w-[280px] rounded-none border-r border-border bg-secondary py-3"
     >
       {NAV_ITEMS.map(({ id, label, Icon }) => {
         const isActive = id === active
@@ -50,20 +55,22 @@ export function Sidebar({ active, onSelect }: SidebarProps): React.JSX.Element {
             aria-current={isActive ? 'page' : undefined}
             onClick={() => onSelect(id)}
             className={cn(
-              'relative flex min-h-10 w-full items-center gap-3 px-3 text-sm outline-none',
-              'transition-colors duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+              'relative flex h-10 w-full cursor-pointer items-center gap-3 px-6 text-sm outline-none',
+              'transition-colors duration-150 ease-standard',
               'hover:bg-primary/[0.06] active:bg-primary/[0.16]',
-              'focus-visible:ring-[3px] focus-visible:ring-ring/[0.32]',
-              isActive ? 'font-semibold text-primary' : 'font-normal text-foreground'
+              'focus-visible:ring-[3px] focus-visible:ring-ring/[0.32] focus-visible:ring-inset',
+              isActive
+                ? 'bg-primary/[0.08] font-semibold text-primary-vivid'
+                : 'font-normal text-muted-foreground hover:text-foreground'
             )}
           >
             {isActive && (
               <span
                 aria-hidden="true"
-                className="absolute inset-y-0 left-0 w-[3px] bg-primary"
+                className="absolute inset-y-0 left-0 w-[3px] bg-primary-vivid"
               />
             )}
-            <Icon className="size-5" aria-hidden="true" />
+            <Icon className="size-[18px]" aria-hidden="true" />
             {label}
           </button>
         )

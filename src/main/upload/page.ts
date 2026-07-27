@@ -18,6 +18,16 @@
 /** Logo crimson, straight off the NicoleBooks lockup. Matches --primary in the renderer theme. */
 const BRAND = '#910023'
 
+/**
+ * The rest of the palette, mirroring the renderer's tokens by value because this file cannot import
+ * them. Keeping the names identical is what makes the drift checkable by eye.
+ */
+const INK = '#343434'
+const MUTED = '#6e6e73'
+const BORDER = '#e5e5ea'
+const SURFACE = '#f5f5f7'
+const SUCCESS_INK = '#146c2c'
+
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
 export function escapeHtml(value: string): string {
   return String(value)
@@ -38,13 +48,25 @@ function shell(title: string, body: string): string {
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
 <style>
+  /*
+    DESIGN WAVE. Three things were wrong and all three are the same mistake: brand colour used
+    where meaning should be.
+
+      1. Both file pickers wore a 2px crimson border, so two secondary choices shouted exactly as
+         loudly as the one primary action underneath them. They are neutral now. The crimson is
+         spent once, on Send, which is the thing the page exists to get pressed.
+      2. The "these are now on the computer" line was crimson, which is the brand, not a result.
+         Success is green.
+      3. Nothing had a focus ring or a press state, so on a phone the buttons felt dead until the
+         page changed.
+  */
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: 24px 20px 40px;
-    background: #f5f5f7;
-    color: #343434;
+    padding: 28px 20px 48px;
+    background: ${SURFACE};
+    color: ${INK};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
     font-size: 17px;
     line-height: 1.45;
@@ -53,56 +75,76 @@ function shell(title: string, body: string): string {
   .wrap { max-width: 480px; margin: 0 auto; }
   .brand {
     color: ${BRAND};
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    margin: 0 0 6px;
+    margin: 0 0 10px;
   }
-  h1 { font-size: 24px; line-height: 1.2; margin: 0 0 8px; font-weight: 700; }
+  h1 {
+    font-size: 26px;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+    font-weight: 700;
+  }
   p { margin: 0 0 16px; }
-  .muted { color: #6e6e73; font-size: 15px; }
+  .muted { color: ${MUTED}; font-size: 15px; }
   .card {
     background: #ffffff;
-    border: 1px solid #e5e5ea;
+    border: 1px solid ${BORDER};
     border-radius: 14px;
     padding: 18px;
     margin: 0 0 16px;
+    box-shadow: 0 1px 2px rgba(15, 15, 20, 0.04);
   }
   .pick {
     display: block;
     width: 100%;
-    border: 2px solid ${BRAND};
+    border: 1px solid ${BORDER};
     border-radius: 12px;
     padding: 16px;
-    margin: 0 0 12px;
+    margin: 0 0 10px;
     background: #ffffff;
-    color: ${BRAND};
+    color: ${INK};
     font-size: 17px;
     font-weight: 600;
     text-align: center;
     cursor: pointer;
+    transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+      border-color 150ms cubic-bezier(0.2, 0, 0, 1);
   }
+  .pick:active { background: ${SURFACE}; border-color: #d5d5da; }
+  .pick:focus-within { border-color: ${BRAND}; box-shadow: 0 0 0 3px rgba(145, 0, 35, 0.32); }
   .pick:last-of-type { margin-bottom: 0; }
   .pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .pick .hint { display: block; font-size: 14px; font-weight: 400; color: #6e6e73; margin-top: 4px; }
+  .pick .hint { display: block; font-size: 14px; font-weight: 400; color: ${MUTED}; margin-top: 4px; }
   .send {
     display: block;
     width: 100%;
     border: 0;
     border-radius: 12px;
-    padding: 16px;
+    padding: 17px;
     background: ${BRAND};
     color: #ffffff;
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
+    transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
   }
-  .send[disabled] { opacity: 0.45; }
-  .chosen { margin: 0 0 14px; font-size: 15px; color: #6e6e73; }
+  .send:active { opacity: 0.88; }
+  .send:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(145, 0, 35, 0.32); }
+  .send[disabled] { opacity: 0.38; cursor: default; }
+  .chosen {
+    margin: 16px 0 14px;
+    padding-top: 14px;
+    border-top: 1px solid ${BORDER};
+    font-size: 15px;
+    color: ${MUTED};
+  }
   ul { margin: 0 0 16px; padding-left: 20px; }
-  li { margin-bottom: 4px; word-break: break-word; }
-  .ok { color: ${BRAND}; font-weight: 600; }
+  li { margin-bottom: 6px; word-break: break-word; }
+  .ok { color: ${SUCCESS_INK}; font-weight: 600; }
   .again {
     display: inline-block;
     margin-top: 4px;
@@ -111,7 +153,8 @@ function shell(title: string, body: string): string {
     text-decoration: none;
     border-bottom: 2px solid ${BRAND};
   }
-  footer { margin-top: 24px; font-size: 14px; color: #6e6e73; }
+  .again:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(145, 0, 35, 0.32); }
+  footer { margin-top: 24px; font-size: 14px; line-height: 1.5; color: ${MUTED}; }
 </style>
 </head>
 <body>
@@ -148,7 +191,7 @@ export function renderUploadPage(token: string): string {
     <span class="hint">Photos or PDF files already saved on this phone</span>
     <input type="file" name="files" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" multiple>
   </label>
-  <p class="chosen" id="chosen" style="margin-top:14px">Nothing chosen yet.</p>
+  <p class="chosen" id="chosen">Nothing chosen yet.</p>
   <button class="send" type="submit" id="send">Send to NicoleBooks</button>
 </form>
 <footer>You can send up to 20 files at a time, and each one can be up to 25 MB. This page only works while NicoleBooks is showing the code on the computer.</footer>

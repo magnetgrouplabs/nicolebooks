@@ -13,8 +13,12 @@
 // It renders no portal, so react-dom/server can render it and the specs can assert on the markup
 // the user gets. Closed is the SSR state, which is also the state the grid spends its life in.
 //
-// DESIGN WAVE: this is structural. The classes are brand tokens and nothing is hardcoded, but the
-// popup is a plain absolutely-positioned panel and would benefit from real elevation and motion.
+// DESIGN WAVE: the popup was a plain absolutely-positioned panel with `shadow-lg`, which is a black
+// drop shadow and therefore does nothing over a near-black background: in dark mode the list had no
+// edge and ran into the page behind it. It now takes the theme-aware overlay elevation, scales in
+// from its top edge so it reads as coming out of the field, caps at 18rem with contained
+// overscroll, and gives the "N more" line a rule and a footer treatment so it stops looking like an
+// option somebody could click.
 
 import { useId, useMemo, useState } from 'react'
 
@@ -103,9 +107,12 @@ export function Combobox({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex items-center gap-1.5">
-        <label htmlFor={inputId} className="font-sans text-xs font-medium text-muted-foreground">
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-h-5 items-center gap-2">
+        <label
+          htmlFor={inputId}
+          className="font-sans text-xs font-medium text-muted-foreground tracking-[0.06em] uppercase"
+        >
           {label}
         </label>
         {marker}
@@ -152,7 +159,8 @@ export function Combobox({
             }
           }}
           className={cn(
-            'h-8 w-full rounded-lg border border-border bg-background px-2.5 font-sans text-sm text-foreground',
+            'h-9 w-full rounded-md border border-border bg-background px-3 font-sans text-sm text-foreground',
+            'transition-[border-color,box-shadow] duration-150 ease-standard',
             'placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
             'disabled:cursor-not-allowed disabled:opacity-50'
           )}
@@ -161,13 +169,20 @@ export function Combobox({
           <div
             // Keeps the input's blur from firing before the option's click.
             onMouseDown={(event) => event.preventDefault()}
-            className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg"
+            // Elevation is the overlay tier, which is a soft shadow on a light theme and a light
+            // hairline on a dark one; `shadow-lg` was a black drop shadow that did nothing at all
+            // over a #1a1a1a background, so the panel had no edge and merged into the page.
+            // The scale-in is 120ms from the top edge, so the list looks like it came out of the
+            // field rather than appearing on top of it.
+            className={cn(
+              'absolute inset-x-0 top-full z-30 mt-1.5 max-h-72 overflow-y-auto overscroll-contain',
+              'rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-overlay',
+              'origin-top animate-in fade-in-0 zoom-in-[0.98] duration-150 ease-standard'
+            )}
           >
             <ul id={listId} role="listbox" aria-label={label}>
               {visible.length === 0 && (
-                <li className="px-2.5 py-1.5 font-sans text-sm text-muted-foreground">
-                  {emptyText}
-                </li>
+                <li className="px-3 py-2 font-sans text-sm text-muted-foreground">{emptyText}</li>
               )}
               {visible.map((option, index) => (
                 <li key={option.id}>
@@ -178,8 +193,10 @@ export function Combobox({
                     onClick={() => choose(option)}
                     onMouseEnter={() => setActive(index)}
                     className={cn(
-                      'flex w-full flex-col items-start gap-0 px-2.5 py-1.5 text-left font-sans text-sm',
-                      index === active ? 'bg-muted text-foreground' : 'text-card-foreground'
+                      'flex w-full cursor-pointer flex-col items-start gap-0 px-3 py-1.5 text-left font-sans text-sm',
+                      'transition-colors duration-100 ease-standard',
+                      index === active ? 'bg-muted text-foreground' : 'text-popover-foreground',
+                      option.id === value && 'font-medium'
                     )}
                   >
                     <span className="w-full truncate">{option.label}</span>
@@ -191,8 +208,11 @@ export function Combobox({
                   </button>
                 </li>
               ))}
+              {/* A FOOTER, with a rule above it, not a tenth option row. It reports on the list; it
+                  is not a thing in the list, and styling it like one invited a click that does
+                  nothing. */}
               {hiddenCount > 0 && (
-                <li className="px-2.5 py-1.5 font-sans text-xs text-muted-foreground">
+                <li className="mt-1 border-t border-border px-3 pt-1.5 pb-1 font-sans text-xs text-muted-foreground">
                   {hiddenCount} more. Type to narrow the list.
                 </li>
               )}

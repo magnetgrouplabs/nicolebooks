@@ -16,6 +16,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import {
   AddFilesButton,
   AddFromPhoneButton,
+  PHONE_UPLOAD_HEADING_ID,
   PhoneUploadPanel,
   addFilesNotice,
   phoneReceivedLine
@@ -126,12 +127,26 @@ describe('PhoneUploadPanel', () => {
       })
     )
 
-  it('is a labelled modal dialog', () => {
+  // WHY THIS ASSERTION MOVED, since it is the one that changed shape in the design wave.
+  //
+  // The panel used to BE the dialog: a hand-rolled fixed overlay that set role="dialog" and
+  // aria-modal="true" itself, and delivered neither of the things those attributes promise. Tab
+  // walked straight out into the screen behind it, Escape did nothing, and nothing outside was
+  // hidden from a screen reader. It now renders inside the real Dialog primitive, which supplies
+  // all of that, and takes its accessible NAME from the heading below.
+  //
+  // So what is pinned here is the half that is provable without a DOM and is this component's own
+  // responsibility: the panel exposes a titled heading under the exact id the popup points its
+  // aria-labelledby at. Break the id and the dialog loses its name. The other half, that the thing
+  // really is modal and really does close on Escape, cannot be asserted against a portalled
+  // component in react-dom/server at all, so it is pinned where it is observable: e2e/dialog.spec.ts
+  // opens it in the running app and checks role, aria-modal, Escape, and focus containment.
+  it('supplies the heading the dialog is named by', () => {
     const html = render()
-    expect(html).toContain('role="dialog"')
-    expect(html).toContain('aria-modal="true"')
-    expect(html).toContain('aria-labelledby="phone-upload-heading"')
+    expect(html).toContain(`id="${PHONE_UPLOAD_HEADING_ID}"`)
     expect(html).toContain('Add from phone')
+    // The id BillsScreen hands to the popup's aria-labelledby, verbatim.
+    expect(PHONE_UPLOAD_HEADING_ID).toBe('phone-upload-heading')
   })
 
   it('shows the QR code from a self-contained data URI, with alt text', () => {

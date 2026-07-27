@@ -25,13 +25,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { CheckCircle2, Plus, Send } from 'lucide-react'
+import { CheckCircle2, ChevronRight, Plus, Send } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
-import { Separator } from '@/components/ui/separator'
+import { Dialog, DialogBackdrop, DialogPopup, DialogPortal } from '@/components/ui/dialog'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { cn } from '@/lib/utils'
 import { formatCents } from '@/lib/money'
 import { ParsedFieldList, flaggedFields } from './parsed-fields'
 import {
@@ -220,7 +221,14 @@ export function AddVendorPanel({
   const trimmed = name.trim()
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
+    /*
+      A DASHED well, not another filled panel. It sat in a solid muted box that looked exactly like
+      the field grid above it, so the one control on this screen that writes a permanent record into
+      somebody's QuickBooks read as a seventh form field. A dashed edge is the long-standing
+      convention for "this creates something that does not exist yet", and the Plus on the button
+      says the same thing a second time.
+    */
+    <div className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-muted/40 px-3 py-3">
       <p className="font-sans text-sm text-muted-foreground">{ADD_VENDOR_HINT}</p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
@@ -236,6 +244,7 @@ export function AddVendorPanel({
         <Button
           variant="outline"
           size="sm"
+          className="h-9"
           disabled={busy || trimmed === '' || trimmed.length > VENDOR_NAME_MAX}
           onClick={() => onCreate(trimmed)}
         >
@@ -270,6 +279,18 @@ export function matchMarkerText(confidence: MatchConfidence | null): string | nu
   return null
 }
 
+/**
+ * THE MARKER IS NOT AN ERROR, and it used to look exactly like one.
+ *
+ * 'needs your pick' rendered destructive, which is the same red the app uses for a document it
+ * could not read and an entry QuickBooks refused. On a fresh batch reconciliation returns 'none'
+ * for most cells, so the live drill screenshotted nine bills wearing eighteen red chips before the
+ * user had done anything wrong. A screen that is red by default has spent its red: the one row
+ * that genuinely failed no longer stands out from the eight that are simply waiting.
+ *
+ * It is now the warning tier, which is what the state actually is: a request, addressed to the
+ * person reading it, on a screen whose whole job is collecting those answers.
+ */
 export function MatchMarker({
   confidence
 }: {
@@ -277,9 +298,7 @@ export function MatchMarker({
 }): React.JSX.Element | null {
   const text = matchMarkerText(confidence)
   if (text === null) return null
-  return (
-    <Badge variant={confidence === 'none' ? 'destructive' : 'secondary'}>{text}</Badge>
-  )
+  return <Badge variant={confidence === 'none' ? 'warning' : 'outline'}>{text}</Badge>
 }
 
 /**
@@ -300,27 +319,40 @@ export function TypeToggle({
   onChange: (next: 'bill' | 'expense') => void
 }): React.JSX.Element {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="font-sans text-xs font-medium text-muted-foreground">Type</span>
-      <div role="group" aria-label="Bill or expense" className="flex gap-1">
-        <Button
-          variant={value === 'bill' ? 'default' : 'outline'}
-          size="sm"
-          disabled={disabled}
-          aria-pressed={value === 'bill'}
-          onClick={() => onChange('bill')}
-        >
-          Bill
-        </Button>
-        <Button
-          variant={value === 'expense' ? 'default' : 'outline'}
-          size="sm"
-          disabled={disabled}
-          aria-pressed={value === 'expense'}
-          onClick={() => onChange('expense')}
-        >
-          Expense
-        </Button>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="font-sans text-xs font-medium text-muted-foreground tracking-[0.06em] uppercase">
+        Type
+      </span>
+      {/*
+        A real segmented control: one recessed track holding two halves, so the pair reads as one
+        two-state control rather than as two buttons that happen to sit together. The chosen half
+        lifts to the card surface, which is the same "selected sits forward" language the sidebar
+        uses. It was a solid crimson button beside an outlined one, which spent the brand colour on
+        a field-level choice and made every row carry a crimson slab.
+      */}
+      <div
+        role="group"
+        aria-label="Bill or expense"
+        className="inline-flex h-9 w-fit items-center gap-0.5 rounded-md bg-muted p-0.5"
+      >
+        {(['bill', 'expense'] as const).map((option) => (
+          <Button
+            key={option}
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            aria-pressed={value === option}
+            onClick={() => onChange(option)}
+            className={cn(
+              'h-8 px-3 font-medium',
+              value === option
+                ? 'bg-card text-foreground shadow-raised hover:bg-card'
+                : 'text-muted-foreground hover:bg-transparent hover:text-foreground'
+            )}
+          >
+            {option === 'bill' ? 'Bill' : 'Expense'}
+          </Button>
+        ))}
       </div>
     </div>
   )
@@ -335,6 +367,7 @@ export function FieldInput({
   placeholder,
   invalid = false,
   disabled = false,
+  figure = false,
   hint
 }: {
   label: string
@@ -344,12 +377,16 @@ export function FieldInput({
   placeholder?: string
   invalid?: boolean
   disabled?: boolean
+  /** The value is a figure (money, an id) rather than a phrase, so it is set in the mono face. */
+  figure?: boolean
   hint?: string
 }): React.JSX.Element {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label className="flex flex-col gap-1">
-        <span className="font-sans text-xs font-medium text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label className="flex flex-col gap-1.5">
+        <span className="font-sans text-xs font-medium text-muted-foreground tracking-[0.06em] uppercase">
+          {label}
+        </span>
         <input
           type={type}
           value={value}
@@ -357,9 +394,17 @@ export function FieldInput({
           aria-invalid={invalid}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-8 w-full rounded-lg border bg-background px-2.5 font-sans text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={cn(
+            // 36px tall, matching the comboboxes and the segmented control beside it, on the
+            // control rung of the radius ladder. Money and dates are figures, so they are set in
+            // the mono face: a column of amounts that does not line up is a column nobody checks.
+            'h-9 w-full rounded-md border bg-background px-3 font-sans text-sm text-foreground',
+            'transition-[border-color,box-shadow] duration-150 ease-standard',
+            'placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            (figure || type === 'date') && 'font-mono',
             invalid ? 'border-destructive' : 'border-border focus-visible:border-ring'
-          }`}
+          )}
         />
       </label>
       {hint && <span className="font-sans text-xs text-muted-foreground">{hint}</span>}
@@ -386,11 +431,23 @@ export function DuplicateNotice({
   const line = duplicateNoticeLine(warnings)
   if (line === null) return null
   return (
-    <details className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
-      <summary className="cursor-pointer font-sans text-sm text-destructive">
-        {line} You can send it anyway.
+    /*
+      Warning tier, not destructive, and a real disclosure control rather than a bare <details>.
+
+      It was a red panel whose only affordance was the browser's default triangle, which reads as
+      an error the user has to clear. It is not one: the notice says so itself ("You can send it
+      anyway"), and its own copy is an offer to check rather than a refusal. The chevron replaces
+      the default marker so the row plainly looks openable, and it turns when it is open.
+    */
+    <details className="group/dupe rounded-md border border-warning/30 bg-warning/12 px-3 py-2 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-start gap-2 font-sans text-sm text-warning-foreground">
+        <ChevronRight
+          aria-hidden="true"
+          className="mt-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-standard group-open/dupe:rotate-90"
+        />
+        <span>{line} You can send it anyway.</span>
       </summary>
-      <ul className="mt-2 flex flex-col gap-1">
+      <ul className="mt-2 flex flex-col gap-1 pl-5.5">
         {warnings.map((warning) => (
           <li key={`${warning.batchId}-${warning.fileHash}`} className="font-sans text-sm text-muted-foreground">
             {warning.vendorName ?? 'That vendor'}, {formatCents(warning.amountCents)}, dated{' '}
@@ -467,21 +524,37 @@ export function ReviewRowCard({
   const locked = sendState !== undefined
 
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <label className="flex min-w-0 items-center gap-2">
+    /*
+      THE ROW'S ARGUMENT, MADE VISUALLY.
+
+      A row states two different kinds of thing and used to state them in one undifferentiated
+      stack: parsed values, a hairline rule, editable controls, all on one flat card at one type
+      size. The rule carried the entire distinction, and in dark mode the rule was very nearly
+      invisible. So the screen's central claim, "here is what the document said, and separately,
+      here is what will be sent", was left for the user to infer.
+
+      Now the evidence is QUOTED. What the document said sits on a recessed slab with a rule down
+      its left edge, which is the same device prose uses for a block quotation, and it reads as
+      something transcribed rather than something typed. What will be sent sits forward on the card
+      itself, in live controls at full contrast. Two surfaces, two jobs, no caption needed.
+    */
+    <li className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-raised">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex min-w-0 cursor-pointer items-center gap-2.5">
           <input
             type="checkbox"
             checked={row.included}
             disabled={locked}
             onChange={(event) => onEdit({ included: event.target.checked })}
-            className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-50"
           />
-          <span className="font-mono text-sm text-card-foreground">{row.filename}</span>
+          <span className="truncate font-mono text-sm font-medium text-card-foreground">
+            {row.filename}
+          </span>
         </label>
         <div className="flex shrink-0 items-center gap-2">
           {row.scanStatus === 'duplicate-excluded' && (
-            <Badge variant="destructive">Already entered before</Badge>
+            <Badge variant="warning">Already entered before</Badge>
           )}
           {failed && <Badge variant="destructive">Could not read</Badge>}
           {!failed && flags.size > 0 && <Badge variant="destructive">Needs review</Badge>}
@@ -498,7 +571,11 @@ export function ReviewRowCard({
 
       {/* WHAT THE DOCUMENT SAID. Stays visible above the controls so a correction never hides the
           claim it corrected. */}
-      {row.parsed && <ParsedFieldList fields={row.parsed} flags={flags} />}
+      {row.parsed && (
+        <div className="rounded-md border-y border-r border-border border-l-2 border-l-muted-foreground/30 bg-muted px-4 py-3">
+          <ParsedFieldList fields={row.parsed} flags={flags} />
+        </div>
+      )}
       {failed && (
         <p className="font-sans text-sm text-destructive">
           {row.parse?.error ??
@@ -506,10 +583,8 @@ export function ReviewRowCard({
         </p>
       )}
 
-      <Separator />
-
       {/* WHAT WILL BE SENT. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
         <TypeToggle
           value={row.entryType}
           disabled={locked}
@@ -549,6 +624,7 @@ export function ReviewRowCard({
           label="Amount"
           value={row.amountText}
           placeholder="1336.00"
+          figure
           // Covers both "that is not money" and "that is money QuickBooks will not take", so the
           // flagged $0.00 an unreadable total leaves behind is marked, not quietly accepted.
           invalid={amountFieldInvalid(row)}
@@ -574,6 +650,7 @@ export function ReviewRowCard({
         <FieldInput
           label="Reference number"
           value={row.refNumber}
+          figure
           invalid={row.refNumber.length > REF_NUMBER_MAX}
           disabled={locked}
           onChange={(refNumber) => onEdit({ refNumber })}
@@ -598,7 +675,14 @@ export function ReviewRowCard({
 
       <DuplicateNotice warnings={warnings} />
 
-      {gap && <p className="font-sans text-sm text-destructive">Still needed: {gap}.</p>}
+      {/* Same reasoning as the match marker: an unfinished row is a request, not a fault, and it is
+          the ordinary state of every row on a fresh batch. Red belongs to what actually went wrong,
+          which on this row is sendError. */}
+      {gap && (
+        <p className="font-sans text-sm font-medium text-warning-foreground">
+          Still needed: {gap}.
+        </p>
+      )}
       {sendError && <p className="font-sans text-sm text-destructive">{sendError}</p>}
     </li>
   )
@@ -627,14 +711,18 @@ export function ReviewFooter({
 }): React.JSX.Element {
   const gate = busy ? { canSend: false, reason: STILL_READING } : sendGate(rows)
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
+    // Sticky, and that is a working decision rather than a flourish: with nine bills open the one
+    // button that sends them was below nine screenfuls of form, so checking a row meant losing
+    // sight of the total it contributes to. The elevation is the overlay tier because the strip
+    // genuinely floats over the list.
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-overlay">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <p className="font-sans text-sm font-medium text-card-foreground">
+        <p className="font-sans text-sm font-semibold text-card-foreground">
           {batchSummaryLine(rows)}
         </p>
         {gate.reason && <p className="font-sans text-sm text-muted-foreground">{gate.reason}</p>}
       </div>
-      <Button variant="default" disabled={!gate.canSend || sending} onClick={onSend}>
+      <Button variant="default" size="lg" disabled={!gate.canSend || sending} onClick={onSend}>
         <Send aria-hidden="true" />
         {sending ? 'Sending...' : 'Send to QuickBooks'}
       </Button>
@@ -642,12 +730,20 @@ export function ReviewFooter({
   )
 }
 
+/** The id the send dialog's popup points its aria-labelledby at. */
+export const SEND_CONFIRM_HEADING_ID = 'send-confirm-heading'
+
 /**
  * The confirmation, which states exactly what will happen before anything leaves the app.
  *
  * Sending to somebody's books is not undoable in one step from here (undo lives on the History
  * screen and refuses anything already worked on), so the last thing between the user and their
  * accounts spells out the count and the split rather than asking "are you sure".
+ *
+ * It renders INSIDE a real modal now (see the Dialog at the bottom of this file), which is why
+ * there is no card frame here any more: the dialog popup is the frame. This stays a plain
+ * component so its copy and its two disabled controls remain provable without a DOM, which a
+ * portalled dialog is not.
  */
 export function SendConfirm({
   rows,
@@ -661,18 +757,23 @@ export function SendConfirm({
   onCancel: () => void
 }): React.JSX.Element {
   return (
-    <div
-      role="group"
-      aria-label="Confirm send"
-      className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-muted p-4"
-    >
-      <p className="font-sans text-sm font-semibold text-foreground">Send these to QuickBooks?</p>
-      <p className="font-sans text-sm text-muted-foreground">{sendConfirmBody(rows)}</p>
-      <p className="font-sans text-sm text-muted-foreground">
-        You can reverse the whole batch afterwards on the History screen, as long as nothing has been
-        changed or paid in QuickBooks since.
-      </p>
-      <div className="flex gap-2">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h2
+          id={SEND_CONFIRM_HEADING_ID}
+          className="font-heading text-lg font-semibold text-card-foreground"
+        >
+          Send these to QuickBooks?
+        </h2>
+        <p className="font-sans text-sm text-muted-foreground">{sendConfirmBody(rows)}</p>
+        <p className="font-sans text-sm text-muted-foreground">
+          You can reverse the whole batch afterwards on the History screen, as long as nothing has
+          been changed or paid in QuickBooks since.
+        </p>
+      </div>
+      {/* The affirmative sits on the right, where the eye finishes, and the way out is a quiet
+          ghost beside it: this dialog exists to be read, not to be dismissed by reflex. */}
+      <div className="flex flex-row-reverse gap-2">
         <Button variant="default" disabled={busy} onClick={onConfirm}>
           {busy ? 'Sending...' : 'Yes, send them'}
         </Button>
@@ -708,9 +809,9 @@ export function CompletionStrip({
   onOpenHistory?: () => void
 }): React.JSX.Element {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
-      <p className="flex items-center gap-2 font-sans text-sm font-medium text-card-foreground">
-        <CheckCircle2 aria-hidden="true" className="size-4" />
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3">
+      <p className="flex items-center gap-2 font-sans text-sm font-medium text-success-foreground">
+        <CheckCircle2 aria-hidden="true" className="size-4 shrink-0" />
         {completionLine(states)}
       </p>
       {onOpenHistory && (
@@ -718,6 +819,28 @@ export function CompletionStrip({
           Open History for the receipt
         </Button>
       )}
+    </div>
+  )
+}
+
+/**
+ * A determinate progress rail, for the two long operations on this screen.
+ *
+ * Both of them reported themselves as a line of grey text that counted upward ("parsing 3 of 9")
+ * and nothing else, which asks the user to read a sentence repeatedly to find out whether anything
+ * is happening. A bar answers that at a glance and is the one place motion earns its keep here.
+ *
+ * The sentence stays: it is the accessible announcement and it carries the exact counts. The bar is
+ * aria-hidden decoration on top of it.
+ */
+export function ProgressRail({ done, total }: { done: number; total: number }): React.JSX.Element {
+  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((done / total) * 100))) : 0
+  return (
+    <div aria-hidden="true" className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="h-full rounded-full bg-primary-vivid transition-[width] duration-300 ease-standard"
+        style={{ width: `${pct}%` }}
+      />
     </div>
   )
 }
@@ -1018,12 +1141,12 @@ export function ReviewTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-sans text-sm font-semibold text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
+        <h2 className="font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           Review before sending
         </h2>
         <Button
-          variant={attentionOnly ? 'default' : 'outline'}
+          variant={attentionOnly ? 'secondary' : 'outline'}
           size="sm"
           aria-pressed={attentionOnly}
           onClick={() => setAttentionOnly((on) => !on)}
@@ -1033,7 +1156,7 @@ export function ReviewTable({
       </div>
 
       {reference === null && (
-        <p className="rounded-lg border border-border bg-card px-3 py-2 font-sans text-sm text-muted-foreground">
+        <p className="rounded-md border border-border bg-muted/50 px-3 py-2 font-sans text-sm text-muted-foreground">
           {NO_REFERENCE_NOTICE}
         </p>
       )}
@@ -1041,16 +1164,19 @@ export function ReviewTable({
       {sendError && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
         >
           {sendError}
         </p>
       )}
 
       {sending && (
-        <p className="font-sans text-sm text-muted-foreground" aria-live="polite">
-          {sendProgressLine(progress)}
-        </p>
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5">
+          <p className="font-sans text-sm font-medium text-foreground" aria-live="polite">
+            {sendProgressLine(progress)}
+          </p>
+          <ProgressRail done={progress?.done ?? 0} total={progress?.total ?? 0} />
+        </div>
       )}
 
       {settled && <CompletionStrip states={sendStates} onOpenHistory={onOpenHistory} />}
@@ -1061,7 +1187,7 @@ export function ReviewTable({
         </p>
       )}
 
-      <ul className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-4">
         {visibleRows.map((row) => (
           <ReviewRowCard
             key={row.fileHash}
@@ -1083,21 +1209,41 @@ export function ReviewTable({
         ))}
       </ul>
 
-      {confirming ? (
-        <SendConfirm
-          rows={includedRows(rows)}
-          busy={sending}
-          onConfirm={() => void runSend()}
-          onCancel={() => setConfirming(false)}
-        />
-      ) : (
-        <ReviewFooter
-          rows={rows}
-          sending={sending}
-          busy={busy}
-          onSend={() => setConfirming(true)}
-        />
-      )}
+      <ReviewFooter
+        rows={rows}
+        sending={sending}
+        busy={busy}
+        onSend={() => setConfirming(true)}
+      />
+
+      {/*
+        The last thing between the user and their books is now an actual modal.
+
+        It used to REPLACE the footer inline, so the answer to "wait, how many was that" was to
+        cancel and start again, and Tab from the confirm button walked straight back into the nine
+        editable rows the confirmation was describing. A dialog traps focus, closes on Escape (which
+        is the same decision as "Not yet"), and dims the batch behind it so the count in front is
+        the only thing being agreed to.
+      */}
+      <Dialog
+        open={confirming}
+        onOpenChange={(next) => {
+          // A send in flight is not dismissible: the batch is already leaving.
+          if (!next && !sending) setConfirming(false)
+        }}
+      >
+        <DialogPortal>
+          <DialogBackdrop />
+          <DialogPopup aria-modal="true" aria-labelledby={SEND_CONFIRM_HEADING_ID}>
+            <SendConfirm
+              rows={includedRows(rows)}
+              busy={sending}
+              onConfirm={() => void runSend()}
+              onCancel={() => setConfirming(false)}
+            />
+          </DialogPopup>
+        </DialogPortal>
+      </Dialog>
     </div>
   )
 }

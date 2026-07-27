@@ -60,7 +60,13 @@ import { EmptyState } from '../components/EmptyState'
 import type { Destination } from '../components/Sidebar'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { ReviewTable } from '../review/ReviewTable'
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogPopup,
+  DialogPortal
+} from '../components/ui/dialog'
+import { ProgressRail, ReviewTable } from '../review/ReviewTable'
 import { ParsedFieldList, flaggedFields, isFlagged } from '../review/parsed-fields'
 import type {
   ParseBatchFile,
@@ -228,9 +234,11 @@ export function ScanRow({
   const flags = flaggedFields(parse)
 
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-mono text-sm text-card-foreground">{file.filename}</span>
+    <li className="flex items-start justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+      <div className="flex min-w-0 flex-col gap-2">
+        <span className="truncate font-mono text-sm font-medium text-card-foreground">
+          {file.filename}
+        </span>
         {/* A definition list is the right semantics for label/value pairs, and it is what turns
             an unreadable "Nassau Plumbing Supply $1,336.00" into data the user can actually
             check field by field. The same list is rendered inside every review row. */}
@@ -363,13 +371,22 @@ export function phoneReceivedLine(count: number): string {
   return `${count} files received so far.`
 }
 
+/** The id the phone dialog's popup points its aria-labelledby at. */
+export const PHONE_UPLOAD_HEADING_ID = 'phone-upload-heading'
+
 /**
- * The phone-upload panel.
+ * The phone-upload panel: the CONTENTS of the phone dialog.
  *
- * A plain overlay rather than a component from components/ui, because this build has no Dialog
- * primitive yet. DESIGN wave: this is the first modal in the app and is the obvious place to
- * introduce one; the markup below is deliberately structural so restyling it does not mean
- * rewriting behaviour.
+ * It used to be the dialog too, as a hand-rolled `position: fixed` overlay that set role="dialog"
+ * and aria-modal="true" and then honoured neither: no focus trap, no Escape, no scroll lock,
+ * nothing hidden from a screen reader. It now renders inside the real Dialog primitive
+ * (components/ui/dialog.tsx), which is where all of that behaviour comes from, and the popup takes
+ * its accessible name from the heading id below.
+ *
+ * It stays a plain component rather than absorbing the dialog because a portalled dialog renders as
+ * an empty string under react-dom/server, and every line of copy on this panel is pinned by a spec
+ * that has no DOM. The modal behaviour is pinned instead in e2e/dialog.spec.ts, against the running
+ * app, where it is actually observable.
  *
  * The URL is printed as selectable text beside the QR code, because a phone whose camera cannot
  * read a screen (glare, a cracked lens, an older Android) still needs a way in, and reading twelve
@@ -391,72 +408,80 @@ export function PhoneUploadPanel({
   onDone: () => void
 }): React.JSX.Element {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="phone-upload-heading"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
-    >
-      <div className="flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg">
-        <div className="flex flex-col gap-1">
-          <h2
-            id="phone-upload-heading"
-            className="font-heading text-lg font-semibold text-card-foreground"
-          >
-            Add from phone
-          </h2>
-          <p className="font-sans text-sm text-muted-foreground">
-            Point your phone camera at the code, then take a photo of the bill or pick files already
-            on your phone. They land in your inbox here.
-          </p>
-        </div>
-
-        {starting && (
-          <p className="font-sans text-sm text-muted-foreground" aria-live="polite">
-            Starting phone upload...
-          </p>
-        )}
-
-        {error && (
-          <p
-            role="alert"
-            className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-          >
-            {error}
-          </p>
-        )}
-
-        {qrDataUrl && (
-          <div className="flex justify-center rounded-lg border border-border bg-background p-3">
-            {/* A self-contained data: URI, so the renderer fetches nothing to draw it. */}
-            <img src={qrDataUrl} alt="Code to scan with your phone camera" className="size-56" />
-          </div>
-        )}
-
-        {url && (
-          <div className="flex flex-col gap-1">
-            <p className="font-sans text-sm text-muted-foreground">
-              Or type this into your phone browser:
-            </p>
-            <p className="font-mono text-sm break-all text-card-foreground select-all">{url}</p>
-          </div>
-        )}
-
-        <p className="font-sans text-sm font-medium text-foreground" aria-live="polite">
-          {phoneReceivedLine(receivedCount)}
-        </p>
-
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <h2
+          id={PHONE_UPLOAD_HEADING_ID}
+          className="font-heading text-lg font-semibold text-card-foreground"
+        >
+          Add from phone
+        </h2>
         <p className="font-sans text-sm text-muted-foreground">
-          The first time you use this, Windows may ask whether to allow NicoleBooks on your network.
-          Choose Allow, or your phone will not be able to reach this computer. Your phone and this
-          computer need to be on the same Wi-Fi.
+          Point your phone camera at the code, then take a photo of the bill or pick files already
+          on your phone. They land in your inbox here.
         </p>
+      </div>
 
-        <div className="flex justify-end">
-          <Button variant="default" onClick={onDone}>
-            Done
-          </Button>
+      {starting && (
+        <p className="font-sans text-sm text-muted-foreground" aria-live="polite">
+          Starting phone upload...
+        </p>
+      )}
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+
+      {qrDataUrl && (
+        // White plate, in both themes and on purpose: a QR code is read by a camera, and inverting
+        // it for dark mode is the fastest way to make a code that will not scan.
+        <div className="flex justify-center rounded-md border border-border bg-white p-4">
+          {/* A self-contained data: URI, so the renderer fetches nothing to draw it. */}
+          <img src={qrDataUrl} alt="Code to scan with your phone camera" className="size-56" />
         </div>
+      )}
+
+      {url && (
+        <div className="flex flex-col gap-1">
+          <p className="font-sans text-xs font-medium tracking-[0.06em] text-muted-foreground uppercase">
+            Or type this into your phone browser:
+          </p>
+          <p className="rounded-md bg-muted px-3 py-2 font-mono text-sm break-all text-card-foreground select-all">
+            {url}
+          </p>
+        </div>
+      )}
+
+      <p
+        className="flex items-start gap-2.5 font-sans text-sm font-medium text-foreground"
+        aria-live="polite"
+      >
+        <span
+          aria-hidden="true"
+          className={
+            receivedCount > 0
+              ? 'mt-1.5 size-1.5 shrink-0 rounded-full bg-success'
+              : 'mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/40'
+          }
+        />
+        {phoneReceivedLine(receivedCount)}
+      </p>
+
+      <p className="font-sans text-sm text-muted-foreground">
+        The first time you use this, Windows may ask whether to allow NicoleBooks on your network.
+        Choose Allow, or your phone will not be able to reach this computer. Your phone and this
+        computer need to be on the same Wi-Fi.
+      </p>
+
+      <div className="flex justify-end">
+        <Button variant="default" onClick={onDone}>
+          Done
+        </Button>
       </div>
     </div>
   )
@@ -756,11 +781,16 @@ export function BillsScreen({
           .join(', ')
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="font-sans text-sm font-semibold text-muted-foreground">Inbox</h2>
-          <p className="font-mono text-sm text-muted-foreground">
+    <div className="flex flex-col gap-6">
+      {/* The screen's one masthead: what this screen operates on, and the three ways to feed it.
+          The folder path is reference material, so it is set as the quiet mono line it is, under a
+          tracked cap label rather than beside a same-size heading that competed with it. */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            Inbox
+          </h2>
+          <p className="truncate font-mono text-sm text-foreground">
             {inboxPath ?? 'Locating your inbox folder...'}
           </p>
         </div>
@@ -779,26 +809,38 @@ export function BillsScreen({
       </div>
 
       {addNotice && (
-        <p className="rounded-lg border border-border bg-card px-3 py-2 font-sans text-sm text-card-foreground">
+        <p className="rounded-md border border-border bg-muted/50 px-3 py-2 font-sans text-sm text-card-foreground">
           {addNotice}
         </p>
       )}
 
-      {phoneOpen && (
-        <PhoneUploadPanel
-          starting={phoneStarting}
-          url={phoneUrl}
-          qrDataUrl={phoneQr}
-          receivedCount={phoneReceived}
-          error={phoneError}
-          onDone={() => void closePhoneUpload()}
-        />
-      )}
+      {/* A real modal now: focus trapped, Escape closes it, and closing stops the LAN server
+          exactly as the Done button does, because Escape and Done are the same intent. */}
+      <Dialog
+        open={phoneOpen}
+        onOpenChange={(next) => {
+          if (!next) void closePhoneUpload()
+        }}
+      >
+        <DialogPortal>
+          <DialogBackdrop />
+          <DialogPopup aria-modal="true" aria-labelledby={PHONE_UPLOAD_HEADING_ID}>
+            <PhoneUploadPanel
+              starting={phoneStarting}
+              url={phoneUrl}
+              qrDataUrl={phoneQr}
+              receivedCount={phoneReceived}
+              error={phoneError}
+              onDone={() => void closePhoneUpload()}
+            />
+          </DialogPopup>
+        </DialogPortal>
+      </Dialog>
 
       {scanError && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
         >
           {scanError}
         </p>
@@ -807,7 +849,7 @@ export function BillsScreen({
       {parseError && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
         >
           {parseError}
         </p>
@@ -830,27 +872,48 @@ export function BillsScreen({
       )}
 
       {result && result.files.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <p className="font-sans text-sm font-medium text-foreground">{summaryLine(result)}</p>
-            <p className="font-sans text-sm text-muted-foreground">
-              Batch date: {result.batchEntryDate}
-            </p>
-            {duplicateFiles.length > 0 && (
-              <p className="font-sans text-sm text-muted-foreground">
-                {batchCount} {batchCount === 1 ? 'file' : 'files'} in batch
-              </p>
-            )}
-            {/* The D-15 "parsing N of M" indicator, fed by the parse:progress broadcast. */}
+        <div className="flex flex-col gap-6">
+          {/*
+            The batch's own facts, as one horizontal strip separated by hairlines rather than a
+            stack of four identical grey sentences that had to be read in order to be understood.
+            The scan count leads at full contrast because it is the headline; the rest are context
+            and stay muted.
+
+            Every sentence is byte for byte the one that was there before. What changed is that
+            they stopped being a paragraph.
+          */}
+          <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-raised">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 font-sans text-sm">
+              <span className="font-medium text-card-foreground">{summaryLine(result)}</span>
+              <span aria-hidden="true" className="h-4 w-px bg-border" />
+              <span className="text-muted-foreground">Batch date: {result.batchEntryDate}</span>
+              {duplicateFiles.length > 0 && (
+                <>
+                  <span aria-hidden="true" className="h-4 w-px bg-border" />
+                  <span className="text-muted-foreground">
+                    {batchCount} {batchCount === 1 ? 'file' : 'files'} in batch
+                  </span>
+                </>
+              )}
+              {!parsing && parseSummaryLine && (
+                <>
+                  <span aria-hidden="true" className="h-4 w-px bg-border" />
+                  <span className="text-muted-foreground">{parseSummaryLine}</span>
+                </>
+              )}
+            </div>
+            {/* The D-15 "parsing N of M" indicator, fed by the parse:progress broadcast. The
+                sentence is still the announcement; the rail beside it is what makes "is anything
+                happening" answerable without reading. */}
             {parsing && (
-              <p className="font-sans text-sm text-muted-foreground" aria-live="polite">
-                {parseProgress
-                  ? `Reading bills: parsing ${parseProgress.done} of ${parseProgress.total}...`
-                  : 'Reading bills with the AI model...'}
-              </p>
-            )}
-            {!parsing && parseSummaryLine && (
-              <p className="font-sans text-sm text-muted-foreground">{parseSummaryLine}</p>
+              <div className="flex flex-col gap-2 border-t border-border pt-3">
+                <p className="font-sans text-sm font-medium text-foreground" aria-live="polite">
+                  {parseProgress
+                    ? `Reading bills: parsing ${parseProgress.done} of ${parseProgress.total}...`
+                    : 'Reading bills with the AI model...'}
+                </p>
+                <ProgressRail done={parseProgress?.done ?? 0} total={parseProgress?.total ?? 0} />
+              </div>
             )}
           </div>
 
@@ -890,9 +953,14 @@ export function BillsScreen({
             />
           )}
 
+          {/* The three tails: what was caught, what is still arriving, and what was refused. All
+              three take the same section shape as the review surface above them (a tracked cap over
+              a hairline rule), so the eye reads one rhythm down the screen instead of four. */}
           {duplicateFiles.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="font-sans text-sm font-semibold text-muted-foreground">Duplicates</p>
+            <div className="flex flex-col gap-3">
+              <p className="border-b border-border pb-2 font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                Duplicates
+              </p>
               <ul className="flex flex-col gap-2">
                 {duplicateFiles.map((file) => {
                   const isExcluded = file.status === 'duplicate-excluded'
@@ -911,8 +979,8 @@ export function BillsScreen({
           )}
 
           {notReadyFiles.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="font-sans text-sm font-semibold text-muted-foreground">
+            <div className="flex flex-col gap-3">
+              <p className="border-b border-border pb-2 font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                 Not downloaded yet
               </p>
               <ul className="flex flex-col gap-2">
@@ -924,8 +992,8 @@ export function BillsScreen({
           )}
 
           {unsupportedFiles.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
-              <p className="text-sm font-semibold text-card-foreground">
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
+              <p className="font-sans text-sm font-semibold text-card-foreground">
                 {unsupportedFiles.length} {unsupportedFiles.length === 1 ? 'file' : 'files'} skipped
                 (unsupported type)
               </p>
