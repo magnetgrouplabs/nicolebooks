@@ -6,6 +6,7 @@ out/
 dist/
 
 # Secrets and local data (never commit these)
+.credentials/
 secrets.enc
 *.db
 *.db-journal
