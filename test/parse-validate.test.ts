@@ -81,9 +81,22 @@ describe('toCents', () => {
     expect(toCents('1.234,56')).toBe(123456)
   })
 
-  it('treats a lone separator followed by exactly three digits as grouping', () => {
+  it('treats a lone comma followed by exactly three digits as grouping', () => {
     expect(toCents('1,234')).toBe(123400)
-    expect(toCents('1.234')).toBe(123400)
+  })
+
+  it('treats a repeated separator as grouping in either convention', () => {
+    expect(toCents('1,234,567')).toBe(123456700)
+    expect(toCents('1.234.567')).toBe(123456700)
+  })
+
+  it('reads a lone dot as the decimal point, US-first', () => {
+    // The one deliberately US-biased case, pinned here so it cannot drift silently:
+    // '1.234' is $1.23 (three decimals, truncated), NOT the European $1,234.00. A genuinely
+    // European amount prints its decimal comma too ('1.234,56'), which the both-separators
+    // rule reads correctly. See the locale note on toCents in src/main/parse/validate.ts.
+    expect(toCents('1.234')).toBe(123)
+    expect(toCents('12.5')).toBe(1250)
   })
 
   it('keeps the sign on a credit/refund amount', () => {
