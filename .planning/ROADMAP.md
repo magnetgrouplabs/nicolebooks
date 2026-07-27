@@ -114,7 +114,8 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md - Foundation: install the six libs, define the full ai/parse IPC contract + schemas + preload bridge, shared fake OpenAI client double
+- [x] 03-01-PLAN.md - Foundation: install the six libs, define the full ai/parse IPC contract + schemas + preload bridge, shared fake OpenAI client double
+
 **Wave 2** *(blocked on Wave 1)*
 
 - [ ] 03-02-PLAN.md - AI-config vertical slice: key/baseURL in keychain, Connect/Test calls /models once, vision-badged model picker with use-anyway confirm, persisted model (AI-01..04)
@@ -122,9 +123,11 @@ Plans:
 - [ ] 03-04-PLAN.md - Native-vs-scan routing gate (Docling-style), unpdf text + pdfjs/canvas page render, HEIC->sharp image prep (PARSE-01/02)
 - [ ] 03-05-PLAN.md - Vision field extraction: D-23 prompt + text-before-image call, structured-output fallback ladder, local Zod re-validate + repair retry (PARSE-03)
 - [ ] 03-06-PLAN.md - Persistence: migration0003 parsed_results STRICT table + hash-keyed cache CRUD (PARSE-05 storage)
+
 **Wave 3** *(blocked on Wave 2)*
 
 - [ ] 03-07-PLAN.md - Pipeline integration: auto-parse after scan, per-file isolation + progress, cache-hit-no-recall, Bills parse-status surface (PARSE-05, D-13/15/22/26)
+
 **UI hint**: yes
 
 ### Phase 4: QuickBooks Connection (Sandbox)
@@ -216,7 +219,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 3/3 | Complete    | 2026-07-24 |
-| 3. AI Client and Parse Pipeline | 0/7 | Planned | - |
+| 3. AI Client and Parse Pipeline | 1/7 | In Progress|  |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
 | 6. Review UI | 0/TBD | Not started | - |
