@@ -54,6 +54,7 @@ vi.mock('../src/main/ipc/trusted-sender', () => ({
 
 import { registerSecretsIpc } from '../src/main/ipc/secrets'
 import { AI_API_KEY_SECRET, AI_BASE_URL_SECRET } from '../src/main/ai/client'
+import { QBO_SECRET_KEYS } from '../src/main/qbo/secret-keys'
 import { secretStore } from '../src/main/secrets/secret-store'
 import { Channels } from '../src/shared/ipc-contract'
 
@@ -115,5 +116,36 @@ describe('secrets:get never hands an AI credential back to the renderer (CR-04)'
   it('rejects a malformed key before deciding anything about readability', () => {
     expect(() => getHandler(FAKE_EVENT, '')).toThrow()
     expect(() => getHandler(FAKE_EVENT, 42)).toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Finish sprint (SEAMS): the same gate, extended to the QuickBooks tokens before any of them is
+// ever written. The AI credentials shipped readable for a whole phase because the deny-list was
+// added after the fact; this closes the same hole ahead of QBO-CONNECT rather than behind it.
+// ---------------------------------------------------------------------------
+
+describe('secrets:get never hands a QuickBooks token back to the renderer', () => {
+  it('denies every key QBO-CONNECT will store, even before it is stored', () => {
+    // Unstored keys already return null, so store each one first: otherwise this test would pass
+    // for the wrong reason and keep passing after the deny-list was deleted.
+    for (const key of QBO_SECRET_KEYS) {
+      secretStore.set(key, `LIVE-QBO-VALUE-${key}`)
+      expect(secretStore.get(key)).toBe(`LIVE-QBO-VALUE-${key}`) // main-side read still works
+      expect(getHandler(FAKE_EVENT, key)).toBeNull() // renderer read does not
+    }
+  })
+
+  it('covers the access token, the refresh token, and the client secret', () => {
+    // A non-empty list is what makes the loop above meaningful.
+    expect(QBO_SECRET_KEYS.length).toBeGreaterThanOrEqual(3)
+    expect(QBO_SECRET_KEYS).toContain('qbo-access-token')
+    expect(QBO_SECRET_KEYS).toContain('qbo-refresh-token')
+    expect(QBO_SECRET_KEYS).toContain('qbo-client-secret')
+  })
+
+  it('does not deny the realm id, which is a company identifier and not a credential', () => {
+    // realmId belongs in app_settings and the UI displays it; denying it would be a bug.
+    expect(QBO_SECRET_KEYS).not.toContain('qbo-realm-id')
   })
 })

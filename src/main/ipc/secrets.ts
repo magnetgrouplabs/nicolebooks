@@ -23,6 +23,7 @@ import { ipcMain } from 'electron'
 import { Channels } from '../../shared/ipc-contract'
 import { SecretKeySchema, SecretSetSchema } from '../../shared/schemas'
 import { AI_API_KEY_SECRET, AI_BASE_URL_SECRET } from '../ai/client'
+import { QBO_SECRET_KEYS } from '../qbo/secret-keys'
 import { secretStore } from '../secrets/secret-store'
 import { assertTrustedSender } from './trusted-sender'
 
@@ -37,8 +38,17 @@ import { assertTrustedSender } from './trusted-sender'
  * Add every future credential here. It is deliberately a DENY-list rather than an allow-list so
  * the generic store keeps working for non-secret round trips like the health canary; the moment a
  * new credential lands, it goes in this set.
+ *
+ * The QuickBooks keys are pulled in as a LIST from src/main/qbo/secret-keys.ts rather than spelled
+ * out here (finish sprint, SEAMS). Four agents work in parallel, and a credential is only as safe
+ * as the odds that whoever adds it remembers to edit this file too. Sourcing the names from the
+ * module QBO-CONNECT already owns means a new token key is denied by default.
  */
-const RENDERER_UNREADABLE: ReadonlySet<string> = new Set([AI_API_KEY_SECRET, AI_BASE_URL_SECRET])
+const RENDERER_UNREADABLE: ReadonlySet<string> = new Set([
+  AI_API_KEY_SECRET,
+  AI_BASE_URL_SECRET,
+  ...QBO_SECRET_KEYS
+])
 
 /** Is this key readable by the renderer? Exported for the handler-level regression spec. */
 export function isRendererReadable(key: string): boolean {
