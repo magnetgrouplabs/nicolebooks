@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>NicoleBooks</title>
+    <!--
+      The QuickBooks sign in forwarder.
+
+      WHY THIS PAGE EXISTS. Intuit accepts a plain http://localhost redirect address on development
+      keys only. Production keys require https, and NicoleBooks is a desktop app with nothing to
+      serve https from. So production registers THIS page as its redirect address, and the page
+      hands the sign in straight back to the app's local listener on this computer. The app never
+      stops being the thing that receives the callback.
+
+      WHAT IT DOES WITH THE QUERY STRING. It copies it, unchanged and unread, onto
+      http://localhost:8734/oauth/callback and navigates there. location.replace is used rather than
+      an assignment so this page does not sit in the browser history behind the result.
+
+      WHAT IT DOES NOT DO. It loads nothing from anywhere: no script file, no stylesheet, no font,
+      no image, no analytics. It sends nothing anywhere. It stores nothing. Everything it needs is
+      in this one file, which is what makes it reviewable at a glance, and the review is the point:
+      the query string it forwards contains a one time authorization code.
+
+      THE FALLBACK. If the navigation has not happened within two seconds, the app is not listening
+      (it was closed, or the sign in was finished on a different device), so the page stops looking
+      broken and shows the address to carry over by hand.
+    -->
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f6f6f7;
+        color: #1c1c1e;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      main {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 30rem;
+        margin: 1.5rem;
+        padding: 1.75rem;
+        background: #ffffff;
+        border: 1px solid #e4e4e7;
+        border-top: 4px solid #910023;
+        border-radius: 14px;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.15rem;
+        line-height: 1.3;
+      }
+      p {
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+        line-height: 1.55;
+        color: #55555c;
+      }
+      p:last-child {
+        margin-bottom: 0;
+      }
+      #fallback {
+        display: none;
+      }
+      code {
+        display: block;
+        margin-top: 0.5rem;
+        padding: 0.65rem 0.75rem;
+        background: #f6f6f7;
+        border: 1px solid #e4e4e7;
+        border-radius: 8px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.85rem;
+        color: #1c1c1e;
+        overflow-wrap: anywhere;
+        user-select: all;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Finishing your QuickBooks connection</h1>
+      <p id="working">Returning you to NicoleBooks. You can close this tab in a moment.</p>
+      <div id="fallback">
+        <p>
+          Return to NicoleBooks and try Connect again. If this keeps happening, copy this address
+          into your browser on the computer running NicoleBooks:
+        </p>
+        <code id="target"></code>
+      </div>
+    </main>
+    <script>
+      var target = 'http://localhost:8734/oauth/callback' + window.location.search
+      document.getElementById('target').textContent = target
+      window.setTimeout(function () {
+        document.getElementById('working').style.display = 'none'
+        document.getElementById('fallback').style.display = 'block'
+      }, 2000)
+      window.location.replace(target)
+    </script>
+  </body>
+</html>

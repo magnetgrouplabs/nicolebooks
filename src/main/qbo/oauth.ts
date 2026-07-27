@@ -14,6 +14,14 @@
 // (see env.ts), the server binds 127.0.0.1 so nothing on the LAN can reach it, and it lives only for
 // the duration of one sign in.
 //
+// AND WHY PRODUCTION STILL USES IT. Intuit accepts a plain http://localhost redirect on development
+// keys only; production keys require https. So in production the redirect_uri sent to Intuit is a
+// static https page (docs/oauth-callback.html, served by GitHub Pages) that forwards its query
+// string, unchanged, to the loopback address above. The listener below is identical in both
+// environments: only the address Intuit is told to visit changes. Nothing secret is in that query
+// string beyond the one-time authorization code, which is useless without the client secret this
+// app holds and never publishes.
+//
 // THE STATE NONCE IS LOAD BEARING. A loopback listener accepts a request from any local process and
 // from any page the browser happens to load. Without the nonce, anything could drive this app into
 // exchanging an attacker-supplied authorization code and silently connect it to the ATTACKER's
@@ -32,11 +40,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import {
+  DEFAULT_QBO_ENVIRONMENT,
   QBO_LOOPBACK_PATH,
   QBO_LOOPBACK_PORT,
-  QBO_REDIRECT_URI,
   QBO_SCOPE,
   qboEnvironment,
+  redirectUriFor,
   type QboEnvironment
 } from './env'
 import {
@@ -99,6 +108,12 @@ export function stateMatches(expected: string, received: string | null): boolean
 /**
  * Build the Intuit consent URL. Every parameter is set through URLSearchParams, so a value can
  * never break out of its slot.
+ *
+ * The redirect_uri defaults to the one registered for this ENVIRONMENT (loopback for sandbox, the
+ * https forwarder page for production), because Intuit compares it character for character against
+ * the list registered for the keys that signed the request. The same resolved value has to be
+ * repeated on the token exchange, which is why connectToQuickBooks below resolves it once and
+ * passes it to both.
  */
 export function buildAuthorizeUrl(input: {
   clientId: string
@@ -110,7 +125,7 @@ export function buildAuthorizeUrl(input: {
   url.searchParams.set('client_id', input.clientId)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', QBO_SCOPE)
-  url.searchParams.set('redirect_uri', input.redirectUri ?? QBO_REDIRECT_URI)
+  url.searchParams.set('redirect_uri', input.redirectUri ?? redirectUriFor(input.environment))
   url.searchParams.set('state', input.state)
   return url.toString()
 }
@@ -283,7 +298,11 @@ export async function connectToQuickBooks(deps: OAuthDeps = {}): Promise<Connect
   const credentials = requireClientCredentials(deps)
 
   const state = createStateNonce()
-  const redirectUri = deps.redirectUri ?? QBO_REDIRECT_URI
+  // Resolved ONCE, then used for both legs. Intuit compares the token exchange's redirect_uri
+  // against the one the authorization was granted for, so the two drifting apart is a rejected
+  // exchange after the user has already consented, which is the worst place to fail.
+  const environment = deps.environment ?? DEFAULT_QBO_ENVIRONMENT
+  const redirectUri = deps.redirectUri ?? redirectUriFor(environment)
 
   const callback = await waitForOAuthCallback({
     expectedState: state,
@@ -295,7 +314,7 @@ export async function connectToQuickBooks(deps: OAuthDeps = {}): Promise<Connect
         clientId: credentials.clientId,
         state,
         redirectUri,
-        environment: deps.environment
+        environment
       })
       // Opened only once the socket is listening, so the redirect cannot arrive before there is
       // anything to catch it.

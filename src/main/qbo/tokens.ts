@@ -32,6 +32,7 @@ import {
   QBO_CLIENT_CREDENTIALS_MISSING,
   QBO_NOT_CONNECTED,
   QBO_REAUTH_REQUIRED,
+  QBO_REDIRECT_URI_MISMATCH,
   QBO_SECRET_STORE_UNAVAILABLE,
   QBO_TOKEN_EXCHANGE_FAILED,
   QBO_TOKEN_REFRESH_FAILED
@@ -228,6 +229,18 @@ function isInvalidGrant(status: number, body: string): boolean {
 }
 
 /**
+ * Did Intuit reject the exchange over the redirect address rather than over the credentials?
+ *
+ * Intuit's wording has varied ('invalid_redirect_uri', 'redirect_uri mismatch', a description
+ * naming the parameter), so the test is the parameter NAME in any spelling the body uses. The body
+ * is read only to choose between two opaque codes and is never forwarded: an Intuit fault message
+ * carries the request URL and the client id.
+ */
+function isRedirectUriRejection(body: string): boolean {
+  return /redirect[_ -]?uri/i.test(body)
+}
+
+/**
  * Turn a token endpoint response into a TokenSet. Shared by the refresh and the authorization-code
  * exchange, because the response shape is identical.
  */
@@ -269,8 +282,12 @@ export async function exchangeAuthorizationCode(
   })
 
   if (!response.ok) {
-    await safeBodyText(response)
-    throw new Error(QBO_TOKEN_EXCHANGE_FAILED)
+    const body = await safeBodyText(response)
+    // The redirect address gets its own code because it is the first-run production mistake, and
+    // because the generic copy would send somebody to re-check two credentials that are fine.
+    throw new Error(
+      isRedirectUriRejection(body) ? QBO_REDIRECT_URI_MISMATCH : QBO_TOKEN_EXCHANGE_FAILED
+    )
   }
 
   const parsed = TokenResponseSchema.safeParse(await response.json().catch(() => null))

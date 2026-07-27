@@ -36,6 +36,18 @@ export const QBO_TOKEN_REFRESH_FAILED = 'QBO_TOKEN_REFRESH_FAILED'
 /** The authorization-code exchange failed. Usually a wrong client id or client secret. */
 export const QBO_TOKEN_EXCHANGE_FAILED = 'QBO_TOKEN_EXCHANGE_FAILED'
 
+/**
+ * Intuit rejected the exchange because the redirect address this app sent is not one of the
+ * addresses registered on the app whose keys signed the request.
+ *
+ * Split out from the generic exchange failure because it is the single most likely first-run
+ * mistake on production keys and it has an exact, actionable fix: production and development keys
+ * carry SEPARATE redirect lists in the Intuit portal, and the production list needs both of this
+ * app's addresses. "Check the client id and client secret" (the generic exchange copy) would send
+ * somebody to re-paste two values that were never the problem.
+ */
+export const QBO_REDIRECT_URI_MISMATCH = 'QBO_REDIRECT_URI_MISMATCH'
+
 /** Another process already holds the loopback port, so the redirect could not be caught. */
 export const QBO_CALLBACK_PORT_BUSY = 'QBO_CALLBACK_PORT_BUSY'
 
