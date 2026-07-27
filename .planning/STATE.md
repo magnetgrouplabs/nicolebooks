@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-07-27T14:02:11.035Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-07-27T14:17:13.844Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 03 (ai-client-and-parse-pipeline) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
-Progress: [████████░░] 83% (15/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 5/7)
+Progress: [█████████░] 89% (16/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 6/7)
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [████████░░] 83% (15/18 plans complete — Phases 
 | Phase 03 P03-03 | 9min | 2 tasks | 4 files |
 | Phase 03 P03-04 | 18min | 2 tasks | 10 files |
 | Phase 03 P05 | 14min | 2 tasks | 4 files |
+| Phase 03 P06 | 11min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-05: an OMITTED optional key normalizes to explicit null before BillSchema runs — BillSchema uses .nullable() (key required) while the prompt invites absence; filling only undefined saves a paid repair call per no-tax-line receipt and cannot weaken vendor/total, which are non-nullable
 - [Phase 03]: 03-05: the D-25 ladder descends on error CLASS, not on any failure — 400/404/422 and method-missing TypeErrors descend; 401/403/408/409/429, 5xx and connection errors return immediately, so a bad key costs one call per file instead of three
 - [Phase 03]: 03-05: the D-21 10-page cap is enforced inside extractFields, not by the caller — The request is assembled here, so no future call site can put an unbounded page count and token bill on the wire; truncated is returned on both result branches
+- [Phase 03]: Parse cache (03-06): the SCHEMA_VERSION staleness gate lives inside getCached, so a row produced under a retired prompt/schema contract can never be served by a call site that forgot to check; the row is kept on disk for audit, not deleted (D-24).
+- [Phase 03]: Parse cache (03-06): parsed_results is keyed on file_hash ALONE with ON CONFLICT(file_hash) upsert — storing a different model updates the one row (proven by COUNT(*)=1 across a model switch), because keying on hash+model would silently re-parse and re-charge the entire history the first time the user changed models (D-14/Pitfall 7).
+- [Phase 03]: Parse cache (03-06): putCached takes the raw base URL and stores only new URL().host, so a gateway URL carrying the key in userinfo or a query string cannot reach SQLite; money is bound as-is with no rounding fallback (a silent auto-correct is what D-12 forbids), and a corrupt JSON blob degrades to {}/[] rather than aborting a batch.
 
 ### Pending Todos
 
@@ -138,6 +142,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T14:00:48.620Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-07-27T14:17:13.839Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
