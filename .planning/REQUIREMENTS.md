@@ -27,7 +27,7 @@ Requirements for the initial release. Each maps to a roadmap phase.
 - [x] **PARSE-01**: For text PDFs, app extracts embedded text programmatically before calling the model
 - [x] **PARSE-02**: For photos and scans, app prepares the image (orient, resize, HEIC decode) before calling the model
 - [x] **PARSE-03**: App uses the configured vision model to extract structured fields from each bill: vendor, date, due date, reference or invoice number, subtotal, tax, total, and a suggested category
-- [ ] **PARSE-04**: App validates parsed data deterministically (subtotal plus tax equals total, dates parse, money stored as integer cents) and records per-field confidence signals
+- [x] **PARSE-04**: App validates parsed data deterministically (subtotal plus tax equals total, dates parse, money stored as integer cents) and records per-field confidence signals
 - [x] **PARSE-05**: App persists parsed results so a reload or crash never re-calls the paid model for the same document
 
 ### QuickBooks Connection (QBO)
@@ -144,7 +144,7 @@ Each v1 requirement maps to exactly one phase. See .planning/ROADMAP.md for phas
 | PARSE-01 | Phase 3 | Complete |
 | PARSE-02 | Phase 3 | Complete |
 | PARSE-03 | Phase 3 | Complete |
-| PARSE-04 | Phase 3 | Pending |
+| PARSE-04 | Phase 3 | Complete |
 | PARSE-05 | Phase 3 | Complete |
 | QBO-01 | Phase 4 | Pending |
 | QBO-02 | Phase 4 | Pending |

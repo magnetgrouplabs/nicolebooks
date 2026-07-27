@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation** - Two-process app shell, IPC trust boundary, SQLite persistence, OS-keychain secret store, and Magnet Group brand tokens
 - [x] **Phase 2: Ingestion and Dedupe** - Flat-inbox manual scan, supported formats, processing-date stamping, file-stability checks, and SHA-256 file-hash dedupe (completed 2026-07-24)
-- [ ] **Phase 3: AI Client and Parse Pipeline** - OpenAI-compatible model config, text extraction plus image prep, vision structuring, deterministic validation with confidence signals
+- [x] **Phase 3: AI Client and Parse Pipeline** - OpenAI-compatible model config, text extraction plus image prep, vision structuring, deterministic validation with confidence signals (completed 2026-07-27)
 - [ ] **Phase 4: QuickBooks Connection (Sandbox)** - Guided OAuth, rotated-refresh-token handling, reconnect state, and realm-scoped reference cache (LIVE-CREDENTIALS PAUSE)
 - [ ] **Phase 5: Reconciliation and Matching** - Prefer-existing fuzzy matching for vendors and categories with account-type-filtered candidates
 - [ ] **Phase 6: Review UI** - Editable review table with searchable dropdowns, Bill/Expense toggle, "Paid from" picker, confidence flags, and duplicate warnings
@@ -126,7 +126,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 03-07-PLAN.md - Pipeline integration: auto-parse after scan, per-file isolation + progress, cache-hit-no-recall, Bills parse-status surface (PARSE-05, D-13/15/22/26)
+- [x] 03-07-PLAN.md - Pipeline integration: auto-parse after scan, per-file isolation + progress, cache-hit-no-recall, Bills parse-status surface (PARSE-05, D-13/15/22/26)
 
 **UI hint**: yes
 
@@ -219,7 +219,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 3/3 | Complete    | 2026-07-24 |
-| 3. AI Client and Parse Pipeline | 6/7 | In Progress|  |
+| 3. AI Client and Parse Pipeline | 7/7 | Complete   | 2026-07-27 |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
 | 6. Review UI | 0/TBD | Not started | - |
