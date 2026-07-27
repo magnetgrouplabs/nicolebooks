@@ -26,6 +26,8 @@
 import { describe, expect, it } from 'vitest'
 import { centsToInput, formatCents, parseMoneyToCents, sumCents } from '../src/renderer/src/lib/money'
 import {
+  MAX_AMOUNT_CENTS,
+  amountFieldInvalid,
   applyMatches,
   attentionRows,
   batchSummaryLine,
@@ -463,6 +465,74 @@ describe('rowGap names the ONE thing still missing, in words', () => {
   })
 })
 
+// The bug this block exists for: parseMoneyToCents('0.00') returns the integer 0, not null, so a
+// gate that only asked "did it parse" called the row complete. PostingRowSchema requires a POSITIVE
+// amount, so posting:send would have refused the WHOLE batch, and the schema rejection happens
+// before the handler's try block, so what reached the screen was not a sentence at all.
+//
+// And it is the common case, not an exotic one: src/main/parse/validate.ts records an UNREADABLE
+// TOTAL as 0 cents alongside its flag, on purpose. The document the deterministic gate is proudest
+// of catching was the one that would have made the batch unsendable with no explanation.
+describe('an amount QuickBooks would refuse is refused HERE, where it can be named', () => {
+  it('refuses the flagged zero an unreadable total leaves behind', () => {
+    const unreadable = row({}, { amountText: '0.00' })
+    expect(unreadable.amountCents).toBe(0)
+    expect(rowGap(unreadable)).toBe('enter an amount greater than zero')
+    expect(isRowComplete(unreadable)).toBe(false)
+    expect(sendGate([unreadable]).canSend).toBe(false)
+    expect(toPostingRows([unreadable])).toHaveLength(0)
+  })
+
+  it('refuses a zero typed any of the ways a person types it', () => {
+    for (const text of ['0', '0.0', '0.00', '$0.00']) {
+      expect(rowGap(row({}, { amountText: text }))).toBe('enter an amount greater than zero')
+    }
+  })
+
+  it('accepts one cent, the smallest real bill', () => {
+    expect(rowGap(row({}, { amountText: '0.01' }))).toBeNull()
+  })
+
+  it('refuses an absurd figure, naming the row instead of failing the batch', () => {
+    const huge = row({}, { amountText: '99999999999.99' })
+    expect(rowGap(huge)).toBe('check this amount, it looks far too large')
+    expect(toPostingRows([huge])).toHaveLength(0)
+  })
+
+  it('accepts the largest amount the schema allows', () => {
+    expect(rowGap(row({}, { amountText: '999999999.99' }))).toBeNull()
+    expect(MAX_AMOUNT_CENTS).toBe(99999999999)
+  })
+
+  it('never assembles a row with an amount outside the bounds, gate or no gate', () => {
+    // toPostingRows is what actually crosses the boundary, so it re-checks rather than trusting.
+    expect(toPostingRows([row({}, { amountText: '0.00' })])).toHaveLength(0)
+    expect(toPostingRows([row({}, { amountText: '999999999999' })])).toHaveLength(0)
+  })
+
+  it('never assembles a row whose hash is not a real file hash', () => {
+    expect(toPostingRows([row({ fileHash: 'short' })])).toHaveLength(0)
+  })
+})
+
+describe('amountFieldInvalid marks what is wrong, and not what is merely unfinished', () => {
+  it('leaves an empty field alone, so a fresh row is not a screen of errors', () => {
+    expect(amountFieldInvalid(row({}, { amountText: '' }))).toBe(false)
+    expect(amountFieldInvalid(row({}, { amountText: '   ' }))).toBe(false)
+  })
+
+  it.each(['twenty', '13.', '1336.567', '-50.00', '0.00', '999999999999'])(
+    'marks %s',
+    (text) => {
+      expect(amountFieldInvalid(row({}, { amountText: text }))).toBe(true)
+    }
+  )
+
+  it('leaves a good amount alone', () => {
+    expect(amountFieldInvalid(row({}, { amountText: '1,336.00' }))).toBe(false)
+  })
+})
+
 describe('sendGate', () => {
   it('refuses an empty batch, and says what to do about it', () => {
     const gate = sendGate([row({}, { included: false })])
@@ -693,6 +763,23 @@ describe('duplicateProbes only asks about rows worth asking about', () => {
 
   it('probes an EXCLUDED row too, so the warning arrives before the user ticks it', () => {
     expect(duplicateProbes([row({}, { included: false })])).toHaveLength(1)
+  })
+
+  it('skips an amount the probe schema would refuse, so ONE bad row cannot silence the batch', () => {
+    // PostingCheckDuplicatesSchema validates the whole ARRAY and requires a positive amount, so a
+    // single zero-amount probe rejects every probe beside it. The renderer's catch then clears the
+    // warnings for rows that had perfectly good ones, and a missing warning is invisible.
+    const rows = [row({}, { amountText: '0.00' }), row({ fileHash: HASH_B })]
+    expect(duplicateProbes(rows).map((probe) => probe.rowKey)).toEqual([HASH_B])
+  })
+
+  it('skips an absurd amount for the same reason', () => {
+    const rows = [row({}, { amountText: '999999999999' }), row({ fileHash: HASH_B })]
+    expect(duplicateProbes(rows).map((probe) => probe.rowKey)).toEqual([HASH_B])
+  })
+
+  it('never probes with an empty rowKey, which the schema bounds refuse', () => {
+    expect(duplicateProbes([row({ fileHash: '' })])).toHaveLength(0)
   })
 })
 

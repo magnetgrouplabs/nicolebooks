@@ -30,6 +30,24 @@ export type SendOutcome =
   | { ok: false; error: string }
 
 /**
+ * Is this message something a person can read?
+ *
+ * Every failure main INTENDS to show is a sentence from the posting error table. But the Zod payload
+ * gate runs BEFORE the handler's try block (that is the house pattern, so a malformed payload never
+ * reaches the privileged work), which means a schema rejection crosses the bridge unmapped, and in
+ * Zod 4 that message is the whole issue array serialized as JSON. Forwarding it verbatim would put
+ * a JSON dump in front of the one non-technical user this app exists for.
+ *
+ * The gate in model.ts mirrors every bound the schema enforces, so this should be unreachable. It is
+ * here anyway because "should be unreachable" is exactly the claim that stops being true, and the
+ * cost of being wrong is the ugliest screen in the app at the most sensitive moment in it.
+ */
+function isReadableSentence(message: string): boolean {
+  if (message.startsWith('[') || message.startsWith('{')) return false
+  return !message.includes('"code"') && !message.includes('invalid_type')
+}
+
+/**
  * Assemble the approved rows and send them.
  *
  * `sent` is returned alongside the batch id so the caller can seed its per-row state from the same
@@ -48,6 +66,7 @@ export async function sendReviewBatch(
     return { ok: true, batchId: result.batchId, sent: payload }
   } catch (err) {
     const message = err instanceof Error ? err.message.trim() : ''
-    return { ok: false, error: message.length > 0 ? message : GENERIC_SEND_ERROR }
+    const readable = message.length > 0 && isReadableSentence(message)
+    return { ok: false, error: readable ? message : GENERIC_SEND_ERROR }
   }
 }

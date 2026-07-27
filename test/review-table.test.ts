@@ -300,6 +300,29 @@ describe('a review row shows what the document said AND what will be sent', () =
     expect(isDisabled(html)).toBe(true)
   })
 
+  it('marks a zero amount invalid, because QuickBooks will not take it', () => {
+    // The unreadable-total case: validate.ts records it as 0 cents with its flag, and the review
+    // screen has to refuse it rather than pass it to a schema that requires a positive amount.
+    expect(renderRow({}, { amountText: '0.00' })).toContain('aria-invalid="true"')
+  })
+
+  it('FREEZES a row once it has been handed to QuickBooks', () => {
+    // What was sent is a snapshot. Editing afterwards cannot change what went, but it can leave the
+    // row showing one amount beside an "Entered" chip reporting another, which is the one drift a
+    // screen built for checking must not have.
+    const html = renderRow({}, {}, { sendState: 'confirmed' })
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/)
+    // Every editable control: the two comboboxes, the four text/date inputs, and both toggle
+    // buttons. Text and date inputs carry the attribute; the toggle is a pair of Buttons.
+    expect((html.match(/<input[^>]*\sdisabled=""/g) ?? []).length).toBeGreaterThanOrEqual(7)
+    expect((html.match(/<button[^>]*\sdisabled=""/g) ?? []).length).toBe(2)
+  })
+
+  it('leaves a row that has NOT been sent fully editable', () => {
+    const html = renderRow()
+    expect(html).not.toMatch(/<input[^>]*\sdisabled=""/)
+  })
+
   it('shows the per-row outcome once a batch has been sent', () => {
     expect(renderRow({}, {}, { sendState: 'confirmed' })).toContain('Entered')
     expect(renderRow({}, {}, { sendState: 'sent' })).toContain('Sending')

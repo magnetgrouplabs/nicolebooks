@@ -200,6 +200,35 @@ describe('a send that fails', () => {
     expect(outcome).toEqual({ ok: false, error: notConnected })
   })
 
+  it('never puts a schema dump on screen', async () => {
+    // The Zod payload gate runs BEFORE the handler's try block (so a malformed payload never
+    // reaches the privileged work), which means a schema rejection crosses the bridge unmapped, and
+    // in Zod 4 that message is the whole issue array as JSON. The model gate mirrors every schema
+    // bound so this should be unreachable; it is guarded anyway, because "should be unreachable" is
+    // exactly the claim that stops being true.
+    const zodish =
+      '[\n  {\n    "code": "too_small",\n    "minimum": 0,\n    "path": ["rows", 0, "amountCents"]\n  }\n]'
+    const outcome = await sendReviewBatch([row()], vi.fn().mockRejectedValue(new Error(zodish)))
+    expect(outcome).toEqual({ ok: false, error: GENERIC_SEND_ERROR })
+  })
+
+  it('still forwards a real sentence that happens to mention a code word', async () => {
+    const sentence = 'QuickBooks would not accept this entry. Check the vendor, then send it again.'
+    expect(await sendReviewBatch([row()], vi.fn().mockRejectedValue(new Error(sentence)))).toEqual({
+      ok: false,
+      error: sentence
+    })
+  })
+
+  it('never sends a zero amount, which would have the batch refused whole', async () => {
+    // parseMoneyToCents('0.00') is the integer 0, not null: an unreadable total is recorded as 0
+    // by the deterministic gate, on purpose, and PostingRowSchema requires a POSITIVE amount.
+    const sender = fakeSend()
+    const outcome = await sendReviewBatch([row({}, { amountText: '0.00' })], sender.send)
+    expect(sender.calls).toHaveLength(0)
+    expect(outcome.ok).toBe(false)
+  })
+
   it('falls back only when the rejection said nothing at all', async () => {
     expect(await sendReviewBatch([row()], vi.fn().mockRejectedValue(new Error('')))).toEqual({
       ok: false,

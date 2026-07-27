@@ -35,6 +35,7 @@ import { formatCents } from '@/lib/money'
 import { ParsedFieldList, flaggedFields } from './parsed-fields'
 import {
   REF_NUMBER_MAX,
+  amountFieldInvalid,
   applyMatches,
   attentionRows,
   batchSummaryLine,
@@ -108,9 +109,11 @@ export function MatchMarker({
  */
 export function TypeToggle({
   value,
+  disabled = false,
   onChange
 }: {
   value: 'bill' | 'expense'
+  disabled?: boolean
   onChange: (next: 'bill' | 'expense') => void
 }): React.JSX.Element {
   return (
@@ -120,6 +123,7 @@ export function TypeToggle({
         <Button
           variant={value === 'bill' ? 'default' : 'outline'}
           size="sm"
+          disabled={disabled}
           aria-pressed={value === 'bill'}
           onClick={() => onChange('bill')}
         >
@@ -128,6 +132,7 @@ export function TypeToggle({
         <Button
           variant={value === 'expense' ? 'default' : 'outline'}
           size="sm"
+          disabled={disabled}
           aria-pressed={value === 'expense'}
           onClick={() => onChange('expense')}
         >
@@ -146,6 +151,7 @@ export function FieldInput({
   type = 'text',
   placeholder,
   invalid = false,
+  disabled = false,
   hint
 }: {
   label: string
@@ -154,6 +160,7 @@ export function FieldInput({
   type?: 'text' | 'date'
   placeholder?: string
   invalid?: boolean
+  disabled?: boolean
   hint?: string
 }): React.JSX.Element {
   return (
@@ -165,8 +172,9 @@ export function FieldInput({
           value={value}
           placeholder={placeholder}
           aria-invalid={invalid}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-8 w-full rounded-lg border bg-background px-2.5 font-sans text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none ${
+          className={`h-8 w-full rounded-lg border bg-background px-2.5 font-sans text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
             invalid ? 'border-destructive' : 'border-border focus-visible:border-ring'
           }`}
         />
@@ -255,6 +263,18 @@ export function ReviewRowCard({
   const chip = sendState ? sendStateChip(sendState) : null
   const failed = row.parse?.status === 'parse-failed'
 
+  /**
+   * Once this row has been handed to QuickBooks, its fields stop being editable.
+   *
+   * What was SENT is a snapshot taken at the moment of the send, so editing afterwards cannot
+   * change what went. It can do something worse: leave the row showing $50.00 beside an "Entered"
+   * chip, when $1,336.00 is what is actually in the books. On a screen whose entire purpose is that
+   * the user can check what happened, the display drifting from the payload is the one failure that
+   * costs more than the edit was worth. Corrections after the fact belong in QuickBooks, or behind
+   * the undo on the History screen.
+   */
+  const locked = sendState !== undefined
+
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -262,8 +282,9 @@ export function ReviewRowCard({
           <input
             type="checkbox"
             checked={row.included}
+            disabled={locked}
             onChange={(event) => onEdit({ included: event.target.checked })}
-            className="size-4 accent-primary"
+            className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-50"
           />
           <span className="font-mono text-sm text-card-foreground">{row.filename}</span>
         </label>
@@ -298,13 +319,18 @@ export function ReviewRowCard({
 
       {/* WHAT WILL BE SENT. */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <TypeToggle value={row.entryType} onChange={(entryType) => onEdit({ entryType })} />
+        <TypeToggle
+          value={row.entryType}
+          disabled={locked}
+          onChange={(entryType) => onEdit({ entryType })}
+        />
         <Combobox
           label="Vendor"
           value={row.vendorId}
           options={vendorOptions}
           priorityIds={row.vendorCandidates.map((candidate) => candidate.id)}
           marker={<MatchMarker confidence={row.vendorConfidence} />}
+          disabled={locked}
           onChange={(vendorId) => onEdit({ vendorId })}
         />
         <Combobox
@@ -313,6 +339,7 @@ export function ReviewRowCard({
           options={categoryOptions}
           priorityIds={row.categoryCandidates.map((candidate) => candidate.id)}
           marker={<MatchMarker confidence={row.categoryConfidence} />}
+          disabled={locked}
           onChange={(categoryAccountId) => onEdit({ categoryAccountId })}
         />
         {/* Revealed by Expense, hidden and cleared by Bill: a Purchase must name what paid it, and
@@ -323,6 +350,7 @@ export function ReviewRowCard({
             value={row.paidFromAccountId}
             options={paymentOptions}
             placeholder="Bank or credit card"
+            disabled={locked}
             onChange={(paidFromAccountId) => onEdit({ paidFromAccountId })}
           />
         )}
@@ -330,13 +358,17 @@ export function ReviewRowCard({
           label="Amount"
           value={row.amountText}
           placeholder="1336.00"
-          invalid={row.amountText.trim() !== '' && row.amountCents === null}
+          // Covers both "that is not money" and "that is money QuickBooks will not take", so the
+          // flagged $0.00 an unreadable total leaves behind is marked, not quietly accepted.
+          invalid={amountFieldInvalid(row)}
+          disabled={locked}
           onChange={(amountText) => onEdit({ amountText })}
         />
         <FieldInput
           label="Entry date"
           type="date"
           value={row.txnDate}
+          disabled={locked}
           onChange={(txnDate) => onEdit({ txnDate })}
         />
         {row.entryType === 'bill' && (
@@ -344,6 +376,7 @@ export function ReviewRowCard({
             label="Due date"
             type="date"
             value={row.dueDate}
+            disabled={locked}
             onChange={(dueDate) => onEdit({ dueDate })}
           />
         )}
@@ -351,6 +384,7 @@ export function ReviewRowCard({
           label="Reference number"
           value={row.refNumber}
           invalid={row.refNumber.length > REF_NUMBER_MAX}
+          disabled={locked}
           onChange={(refNumber) => onEdit({ refNumber })}
         />
       </div>

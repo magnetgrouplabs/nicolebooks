@@ -49,6 +49,34 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 export const REF_NUMBER_MAX = 21
 
 /**
+ * The amount bounds, mirrored from PostingRowSchema (`.int().positive().max(99999999999)`).
+ *
+ * Mirrored rather than imported because the schema is a Zod object, not a set of numbers, and a
+ * renderer that imported it would still have to restate the bounds to phrase them as advice. What
+ * matters is that they are the SAME bounds, and that this file says out loud why:
+ *
+ * A ZERO AMOUNT IS THE CASE THAT MATTERS, and it is not hypothetical. src/main/parse/validate.ts
+ * records an unreadable total as 0 cents alongside its flag, deliberately, so the fallback is
+ * visible instead of silent. That row arrives here with amountText '0.00', which parses cleanly to
+ * the integer 0. A gate that only asked "did it parse" would call that row complete, hand it to
+ * posting:send, and have the WHOLE BATCH refused by a schema bound the user never saw. The document
+ * the deterministic gate is proudest of catching would become the batch nobody could send.
+ *
+ * The ceiling is the same argument from the other end: a fat-fingered extra digit is refused here,
+ * where it names the row, rather than at the IPC boundary, where it names nothing.
+ */
+export const MIN_AMOUNT_CENTS = 1
+export const MAX_AMOUNT_CENTS = 99999999999
+
+/** The Phase 2 file hash length. A row without one cannot be sent, matched, or deduped. */
+const FILE_HASH_LENGTH = 64
+
+/** Is this an amount posting:send would actually accept? */
+function isPostableAmount(cents: number | null): cents is number {
+  return cents !== null && cents >= MIN_AMOUNT_CENTS && cents <= MAX_AMOUNT_CENTS
+}
+
+/**
  * One row's starting point, before the user touches anything.
  *
  * `parse` is carried whole rather than picked apart because the row renders the document's own
@@ -297,6 +325,9 @@ export function rowGap(row: ReviewRow): string | null {
   if (row.vendorId === null || row.vendorId === '') return 'pick a vendor'
   if (row.categoryAccountId === null || row.categoryAccountId === '') return 'pick a category'
   if (row.amountCents === null) return 'enter an amount like 1336.00'
+  // The unreadable-total case: a flagged 0 parses perfectly well and is not a bill.
+  if (row.amountCents < MIN_AMOUNT_CENTS) return 'enter an amount greater than zero'
+  if (row.amountCents > MAX_AMOUNT_CENTS) return 'check this amount, it looks far too large'
   if (!ISO_DATE.test(row.txnDate)) return 'pick an entry date'
   if (row.entryType === 'expense' && (row.paidFromAccountId === null || row.paidFromAccountId === ''))
     return 'pick the account that paid it'
@@ -305,6 +336,19 @@ export function rowGap(row: ReviewRow): string | null {
   if (row.refNumber.length > REF_NUMBER_MAX)
     return `shorten the reference number to ${REF_NUMBER_MAX} characters or fewer`
   return null
+}
+
+/**
+ * Should the amount field be marked as wrong?
+ *
+ * An EMPTY field is not wrong, it is unfinished, and marking every untouched row red on arrival
+ * would make the screen look like a list of errors before the user has done anything. Everything
+ * else that posting:send would refuse is marked: text, three decimal places, a negative, a zero
+ * (the flagged unreadable-total case), and an absurd figure.
+ */
+export function amountFieldInvalid(row: ReviewRow): boolean {
+  if (row.amountText.trim() === '') return false
+  return !isPostableAmount(row.amountCents)
 }
 
 /** Is this row complete enough to send? */
@@ -411,7 +455,12 @@ export function toPostingRows(rows: readonly ReviewRow[]): PostingRow[] {
   const payload: PostingRow[] = []
   for (const row of rows) {
     if (!row.included) continue
-    if (row.amountCents === null) continue
+    // The same bounds PostingRowSchema enforces, checked again here rather than trusted from the
+    // gate: this function is what actually crosses the boundary, and a row that fails a schema
+    // bound does not fail alone. posting:send rejects the WHOLE batch, and the Zod message is not
+    // recoverable copy, so the user would meet a rejected batch with no sentence attached.
+    if (!isPostableAmount(row.amountCents)) continue
+    if (row.fileHash.length !== FILE_HASH_LENGTH) continue
     if (row.vendorId === null || row.categoryAccountId === null) continue
     payload.push({
       fileHash: row.fileHash,
@@ -435,12 +484,19 @@ export function toPostingRows(rows: readonly ReviewRow[]): PostingRow[] {
  * A probe on a half-filled row would query a vendor against an amount the user has not finished
  * typing, and warn about a bill that is not the one being entered. Inclusion is NOT a condition: a
  * user about to tick a row deserves the warning before they tick it, not after.
+ *
+ * The amount bounds are the same ones posting:send enforces, and skipping an out-of-range row here
+ * is what keeps ONE bad row from silencing the whole batch. PostingCheckDuplicatesSchema validates
+ * the probe ARRAY, so a single zero-amount probe (the flagged unreadable-total case again) rejects
+ * every probe beside it, and the renderer's catch then clears the warnings for rows that had
+ * perfectly good ones. A missing warning is invisible, which is the worst way for this to fail.
  */
 export function duplicateProbes(rows: readonly ReviewRow[]): DuplicateProbe[] {
   const probes: DuplicateProbe[] = []
   for (const row of rows) {
     if (row.vendorId === null || row.vendorId === '') continue
-    if (row.amountCents === null) continue
+    if (!isPostableAmount(row.amountCents)) continue
+    if (row.fileHash === '') continue
     if (!ISO_DATE.test(row.txnDate)) continue
     probes.push({
       rowKey: row.fileHash,
