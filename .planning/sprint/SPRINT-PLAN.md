@@ -20,8 +20,15 @@ github.com/magnetgrouplabs/nicolebooks (public), ready for real use.
 - Wave 2 (parallel, after SEAMS merge): QBO-CONNECT, INGEST-UX, POSTING-ENGINE
   (worktrees) + LIVE-SEED (sandbox seeding + test corpus, no src changes).
 - Wave 3 (parallel): RECON + REVIEW-UI (worktrees).
-- Wave 4: E2E-INTEGRATION (live sandbox full flow) then DESIGN (vibe-check + corporate pass).
-- Wave 5: RELEASE (v1.0.0 tag, CI installers, GitHub release, local NSIS smoke test).
+- Wave 4: E2E-INTEGRATION (live sandbox full flow) + PROD-MODE (env picker, production
+  OAuth redirect via GitHub Pages forwarder, Anthony's own questionnaire step documented).
+- Wave 5: DESIGN (vibe-check + corporate pass over final surfaces).
+- Wave 6: RELEASE (README rewrite per Anthony's 2026-07-27 feedback: upload from computer
+  or phone, no folder framing, Settings credential walkthrough, live-company section;
+  draft needs Anthony's approval before it lands on the public repo; then the release
+  tag, CI installers, GitHub release, local NSIS smoke test).
+- Version format (Anthony, 2026-07-27): YY.M.version. First release is 26.7.1, tag
+  v26.7.1. Valid semver, so electron-updater comparisons still work.
 
 Fable merges worktree branches and reviews between waves. Suite must stay green
 (419 unit tests + playwright e2e at wave 0; grows every wave).
