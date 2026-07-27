@@ -166,6 +166,15 @@ export interface ExtractFailure {
   rung: LadderRung | null
   truncated: boolean
   rawResponse: string | null
+  /**
+   * The HTTP status the endpoint answered with, when there was one.
+   *
+   * A bare number, deliberately: it carries no provider text, so it cannot leak a URL or a key,
+   * and it is the one piece of information the batch loop needs to tell "this document failed"
+   * apart from "every document is going to fail the same way" (a rejected credential, a rate
+   * limit). Without it the pipeline fires one doomed request per file (WR-06).
+   */
+  status: number | null
 }
 
 export type ExtractFieldsResult = ExtractSuccess | ExtractFailure
@@ -229,12 +238,14 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
       detail: describeError(error),
       rung: null,
       truncated,
-      rawResponse: null
+      rawResponse: null,
+      status: null
     }
   }
 
   const rungs = ladderFrom(deps.startRung)
   let lastError = 'no rung was attempted'
+  let lastStatus: number | null = null
   // Sticky for this document once the endpoint has told us it will not take the parameter: the
   // ladder must not re-learn it on every rung and every repair re-ask (see rejectsTemperature).
   let omitTemperature = false
@@ -265,6 +276,7 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
 
     if (!first.ok) {
       lastError = describeError(first.error)
+      lastStatus = statusOf(first.error)
       // Descend ONLY when the error means "this endpoint does not support this parameter".
       if (canFallBack(first.error) && i < rungs.length - 1) continue
       return {
@@ -273,7 +285,8 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
         detail: lastError,
         rung,
         truncated,
-        rawResponse: null
+        rawResponse: null,
+        status: statusOf(first.error)
       }
     }
 
@@ -306,7 +319,8 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
         detail: describeError(repair.error),
         rung,
         truncated,
-        rawResponse: firstCheck.rawResponse
+        rawResponse: firstCheck.rawResponse,
+        status: statusOf(repair.error)
       }
     }
 
@@ -330,7 +344,8 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
       detail: secondCheck.detail,
       rung,
       truncated,
-      rawResponse: secondCheck.rawResponse
+      rawResponse: secondCheck.rawResponse,
+      status: null
     }
   }
 
@@ -340,7 +355,8 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
     detail: lastError,
     rung: null,
     truncated,
-    rawResponse: null
+    rawResponse: null,
+    status: lastStatus
   }
 }
 
@@ -555,9 +571,15 @@ function canFallBack(error: unknown): boolean {
  * rejection, and retrying it would double the failed calls for every file.
  */
 function rejectsTemperature(error: unknown): boolean {
-  const status = (error as { status?: unknown } | null)?.status
-  if (typeof status === 'number' && status >= 500) return false
+  const status = statusOf(error)
+  if (status !== null && status >= 500) return false
   return /temperature/i.test(describeError(error))
+}
+
+/** The HTTP status of a thrown SDK error, or null when it carries none (a connection fault). */
+function statusOf(error: unknown): number | null {
+  const status = (error as { status?: unknown } | null)?.status
+  return typeof status === 'number' ? status : null
 }
 
 /**

@@ -596,6 +596,106 @@ describe('configuration and input guards', () => {
     expect(client.neverCalled()).toBe(true) // no model means no paid call, not a rejected one
   })
 
+  // WR-06. The ladder refuses to descend on 401/403/429, but that only bounds ONE file. The batch
+  // loop had no memory of why the previous file failed, so an expired key meant one
+  // auth-rejected request per file (ParseBatchSchema permits 500) and a rate limit meant one per
+  // file, each already retried up to maxRetries: 3 with backoff inside the SDK. Repeated auth
+  // failures are what providers use to flag or lock an account.
+  it('stops the batch after a rejected credential and explains it on every row', async () => {
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('Incorrect API key provided'), { status: 401 })
+    })
+
+    const result = await parseBatch(
+      [
+        batchFile('one.pdf'),
+        batchFile('two.pdf'),
+        batchFile('three.pdf'),
+        batchFile('four.pdf'),
+        batchFile('five.pdf')
+      ],
+      deps({ client })
+    )
+
+    // ONE doomed request, not five.
+    expect(client.callCount()).toBe(1)
+    expect(result.summary).toEqual({ total: 5, parsed: 0, failed: 5, cached: 0 })
+    // Visibility over silence: every row still says what to fix, it just was not paid for.
+    for (const file of result.files) {
+      expect(file.status).toBe('parse-failed')
+      expect(file.error).toMatch(/api key/i)
+      expect(file.error).toMatch(/settings/i)
+    }
+  })
+
+  it('stops the batch on a rate limit and tells the user to wait', async () => {
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('Rate limit reached'), { status: 429 })
+    })
+    const result = await parseBatch(
+      [batchFile('one.pdf'), batchFile('two.pdf'), batchFile('three.pdf')],
+      deps({ client })
+    )
+
+    expect(client.callCount()).toBe(1)
+    expect(result.files.every((f) => f.status === 'parse-failed')).toBe(true)
+    expect(result.files[2].error).toMatch(/wait a few minutes/i)
+  })
+
+  it('still emits one progress event per file when the batch short-circuits', async () => {
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('forbidden'), { status: 403 })
+    })
+    const events: ParseProgress[] = []
+    await parseBatch(
+      [batchFile('one.pdf'), batchFile('two.pdf'), batchFile('three.pdf')],
+      deps({ client, onProgress: (p) => events.push(p) })
+    )
+    expect(events.map((e) => [e.done, e.total, e.status])).toEqual([
+      [1, 3, 'parse-failed'],
+      [2, 3, 'parse-failed'],
+      [3, 3, 'parse-failed']
+    ])
+  })
+
+  it('does NOT short-circuit on a per-document failure', async () => {
+    // A 500, a timeout or an unreadable document says nothing about the next file, so the batch
+    // must keep going: that is D-15's per-file isolation, and it is the case this must not break.
+    const client = makeFakeClient({
+      chatImpl: (args) => {
+        if (imageText(args).includes('two.pdf')) {
+          throw Object.assign(new Error('upstream fault'), { status: 500 })
+        }
+        return makeChatResponse(BILL)
+      }
+    })
+
+    const result = await parseBatch(
+      [batchFile('one.pdf'), batchFile('two.pdf'), batchFile('three.pdf')],
+      deps({ client })
+    )
+
+    expect(result.files.map((f) => f.status)).toEqual(['parsed', 'parse-failed', 'parsed'])
+    expect(client.callCount()).toBe(3)
+  })
+
+  it('still answers already-cached files after the breaker trips', async () => {
+    // The breaker exists to skip doomed NETWORK calls, not to discard work that costs nothing.
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('Incorrect API key provided'), { status: 401 })
+    })
+    const first = batchFile('one.pdf')
+    const second = batchFile('two.pdf')
+
+    // Seed two.pdf into the cache by parsing it with a working client.
+    const working = makeFakeClient({ parsedObject: BILL })
+    await parseBatch([second], deps({ client: working }))
+
+    const result = await parseBatch([first, second], deps({ client }))
+    expect(result.files.map((f) => f.status)).toEqual(['parse-failed', 'cached'])
+    expect(client.callCount()).toBe(1)
+  })
+
   it('refuses a filename that tries to escape the inbox folder', async () => {
     // The renderer supplies the filename; the inbox path is resolved server-side. A filename
     // carrying a path separator must never become a read outside the folder (T-02-02's guard,

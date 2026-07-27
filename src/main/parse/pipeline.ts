@@ -123,6 +123,33 @@ const PIXEL_BUDGET_COPY =
 
 const GENERIC_FAILURE_COPY = 'Could not read this bill. Click Retry to try again.'
 
+/**
+ * Copy for the two failures that condemn the whole batch, not one document (WR-06).
+ *
+ * The ladder already refuses to descend on these, but that only bounds ONE file. The batch loop
+ * had no memory, so an expired key meant one auth-rejected request per file (500 permitted by
+ * ParseBatchSchema) and a rate limit meant one request per file each of which the SDK had already
+ * retried up to maxRetries: 3 with backoff. Repeated auth failures are exactly what providers use
+ * to flag or lock an account, and the UI sat on "Reading bills..." for minutes to earn 40
+ * identical rows.
+ */
+const AUTH_REJECTED_COPY =
+  'Your AI provider rejected the API key, so the rest of this batch was not sent. Update your key in Settings, then scan again.'
+
+const RATE_LIMITED_COPY =
+  'Your AI provider is limiting requests right now, so the rest of this batch was not sent. Wait a few minutes, then scan again.'
+
+/**
+ * Statuses that mean every remaining file will fail identically. Auth and permission are settings
+ * problems; a rate limit is a wait-and-retry problem. Everything else (a 500, a timeout, an
+ * unreadable document) stays per-file, because the next document really might succeed.
+ */
+const TERMINAL_STATUS_COPY: Readonly<Record<number, string>> = {
+  401: AUTH_REJECTED_COPY,
+  403: AUTH_REJECTED_COPY,
+  429: RATE_LIMITED_COPY
+}
+
 /** extractFields reports failure as data; each reason maps to copy the user can act on. */
 const EXTRACT_FAILURE_COPY: Readonly<Record<ExtractFailureReason, string>> = {
   'client-unavailable':
@@ -227,9 +254,18 @@ export async function parseBatch(
   const total = list.length
   const results: ParseFileResult[] = []
   let done = 0
+  // The batch-scope circuit breaker (WR-06). Once the provider has rejected the credential or
+  // started rate limiting, every remaining file is going to fail the same way, so the rest of the
+  // batch is marked without sending anything. Each row still says exactly what to fix (D-15's
+  // visibility rule); what is skipped is the doomed request, not the feedback.
+  let terminal: string | null = null
 
   for (const file of list) {
-    const result = await parseOne(file, ctx)
+    // parseOne still runs: the breaker skips the PAID work, not the cache lookup, so a file that
+    // was already parsed is still answered for free rather than discarded.
+    const outcome = await parseOne(file, ctx, terminal)
+    const result = outcome.result
+    if (outcome.terminal) terminal = outcome.terminal
     results.push(result)
     done += 1
     emitProgress(deps.onProgress, {
@@ -251,13 +287,30 @@ export async function parseBatch(
   }
 }
 
+/** What one file's parse produced, plus whether it condemned the rest of the batch (WR-06). */
+interface ParseOutcome {
+  result: ParseFileResult
+  /** Copy to fail every REMAINING file with, or null to keep going normally. */
+  terminal: string | null
+}
+
+/** A per-file result that leaves the batch running. */
+function keepGoing(result: ParseFileResult): ParseOutcome {
+  return { result, terminal: null }
+}
+
 /**
  * Parse exactly one file. NEVER throws — every failure path becomes a 'parse-failed' row so the
  * batch loop above can continue (D-15, Shared Pattern C).
  */
-async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseFileResult> {
-  const filename = typeof file?.filename === 'string' ? file.filename : ''
-  const hash = typeof file?.hash === 'string' ? file.hash : ''
+async function parseOne(
+  file: ParseBatchFile,
+  ctx: ParseContext,
+  /** Set once the batch has hit a terminal configuration failure (WR-06); null while healthy. */
+  terminal: string | null = null
+): Promise<ParseOutcome> {
+  const filename = nameOf(file)
+  const hash = hashOf(file)
 
   try {
     // ---- 1. CACHE FIRST (PARSE-05). Before the bytes, before the client, before anything. ----
@@ -266,7 +319,7 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
     if (!ctx.force) {
       const hit = getCached(ctx.db, hash)
       if (hit) {
-        return {
+        return keepGoing({
           filename,
           hash,
           status: 'cached',
@@ -274,13 +327,17 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
           confidence: hit.confidence,
           validationFlags: hit.validationFlags,
           truncated: hit.truncated
-        }
+        })
       }
     }
 
+    // Everything past this point costs a network call, so this is where the batch breaker stops:
+    // AFTER the free cache lookup above, BEFORE any request. The row still carries the reason.
+    if (terminal) return { result: failedResult(filename, hash, terminal), terminal }
+
     // A missing model is a configuration problem, not a document problem. Failing here means no
     // paid call is made and no rejected one either; the row tells the user exactly what to fix.
-    if (!ctx.model) return failedResult(filename, hash, NO_MODEL_COPY)
+    if (!ctx.model) return keepGoing(failedResult(filename, hash, NO_MODEL_COPY))
 
     const bytes = await ctx.readFile(filename)
 
@@ -298,7 +355,7 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
     // bytes returns the other document's vendor, dates and total as 'cached', with no model call
     // and no flag. parse:reparse already resolves by hash (parse.ts findInboxFileByHash), so this
     // makes the batch path consistent with it rather than adding a new rule.
-    if (sha256(bytes) !== hash) return failedResult(filename, hash, STALE_BYTES_COPY)
+    if (sha256(bytes) !== hash) return keepGoing(failedResult(filename, hash, STALE_BYTES_COPY))
 
     // ---- 3. ROUTE (D-20). Native-with-authoritative-text, or image-only. ----
     const decision = await ctx.routeFile({ filename, bytes })
@@ -314,7 +371,11 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
       client: ctx.client
     })
     if (!primary.ok) {
-      return failedResult(filename, hash, EXTRACT_FAILURE_COPY[primary.reason] ?? GENERIC_FAILURE_COPY)
+      // A rejected credential or a rate limit is not this document's problem: it is the batch's.
+      const terminal = primary.status === null ? null : (TERMINAL_STATUS_COPY[primary.status] ?? null)
+      const copy =
+        terminal ?? EXTRACT_FAILURE_COPY[primary.reason] ?? GENERIC_FAILURE_COPY
+      return { result: failedResult(filename, hash, copy), terminal }
     }
 
     const validated = validateBill(primary.bill)
@@ -361,7 +422,7 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
       truncated
     })
 
-    return {
+    return keepGoing({
       filename,
       hash,
       status: 'parsed',
@@ -369,9 +430,9 @@ async function parseOne(file: ParseBatchFile, ctx: ParseContext): Promise<ParseF
       confidence,
       validationFlags,
       truncated
-    }
+    })
   } catch (error) {
-    return failedResult(filename, hash, recoverableReason(error))
+    return keepGoing(failedResult(filename, hash, recoverableReason(error)))
   }
 }
 
@@ -534,6 +595,16 @@ function safeInboxPath(folder: string, filename: string): string {
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
+
+/** The renderer-supplied name, normalized: anything non-string is treated as absent. */
+function nameOf(file: ParseBatchFile): string {
+  return typeof file?.filename === 'string' ? file.filename : ''
+}
+
+/** The renderer-supplied hash, normalized. Never trusted as describing the bytes (see parseOne). */
+function hashOf(file: ParseBatchFile): string {
+  return typeof file?.hash === 'string' ? file.hash : ''
+}
 
 function failedResult(filename: string, hash: string, error: string): ParseFileResult {
   // No fields, no confidence, and NOTHING written to the cache: a failed parse must never
