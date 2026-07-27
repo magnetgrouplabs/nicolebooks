@@ -26,6 +26,21 @@ export const QBO_ACCESS_TOKEN_SECRET = 'qbo-access-token'
  */
 export const QBO_REFRESH_TOKEN_SECRET = 'qbo-refresh-token'
 
+/**
+ * Encrypted secret-store key for the access token's expiry, stored as epoch milliseconds in a
+ * decimal string.
+ *
+ * An expiry timestamp is not itself confidential, but it is kept beside the two tokens rather than
+ * in app_settings for one reason: it is the value the proactive refresh reads to decide whether the
+ * access token is still usable. Keeping the three parts of the token set in ONE store means they
+ * are written and cleared together, so there is no window where SQLite claims the token is fresh
+ * while the keychain no longer holds it.
+ */
+export const QBO_TOKEN_EXPIRY_SECRET = 'qbo-token-expires-at'
+
+/** Encrypted secret-store key for the Intuit app client id. */
+export const QBO_CLIENT_ID_SECRET = 'qbo-client-id'
+
 /** Encrypted secret-store key for the Intuit app client secret. */
 export const QBO_CLIENT_SECRET_SECRET = 'qbo-client-secret'
 
@@ -33,13 +48,21 @@ export const QBO_CLIENT_SECRET_SECRET = 'qbo-client-secret'
  * Every QuickBooks secret-store key, in one list, so src/main/ipc/secrets.ts can deny renderer
  * read-back on all of them at once.
  *
- * NOT included, on purpose: the realm (company) id. It is an identifier the UI displays, not a
- * credential, so it belongs in app_settings rather than the keychain.
+ * The client id is on this list even though Intuit does not treat it as secret on its own. It is
+ * half of the HTTP Basic credential that refreshes a token, the Settings form writes it exactly
+ * like the client secret, and a deny-list entry costs nothing. Denying by default is the whole
+ * point of this module.
+ *
+ * NOT included, on purpose: the realm (company) id, the company name, and the last-sync timestamp.
+ * They are identifiers and state the UI displays, not credentials, so they belong in app_settings
+ * rather than the keychain.
  *
  * QBO-CONNECT: add any further credential key to this array. Do NOT edit secrets.ts.
  */
 export const QBO_SECRET_KEYS: readonly string[] = [
   QBO_ACCESS_TOKEN_SECRET,
   QBO_REFRESH_TOKEN_SECRET,
+  QBO_TOKEN_EXPIRY_SECRET,
+  QBO_CLIENT_ID_SECRET,
   QBO_CLIENT_SECRET_SECRET
 ]
