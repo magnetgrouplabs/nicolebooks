@@ -1,0 +1,75 @@
+name: Release
+
+# Tag-driven release. Pushing a tag like v0.2.0 builds a Windows NSIS installer and macOS
+# dmg + zip artifacts and publishes them, plus the latest.yml / latest-mac.yml feeds that
+# electron-updater reads, to a GitHub Release on this repository.
+#
+# The repository is public, so the shipped app checks for updates anonymously and no token
+# is embedded in the binary. The only credential used here is the automatic GITHUB_TOKEN,
+# which never leaves the runner.
+#
+# Artifacts are UNSIGNED for now. CSC_IDENTITY_AUTO_DISCOVERY is pinned to false on macOS so
+# electron-builder does not pick up a stray keychain identity and produce a half signed
+# bundle. Notarization is intentionally absent. When certificates are procured, the signing
+# secrets get added here and the README install notes get shortened.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# electron-builder --publish always needs write access to create the release and upload to it.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing must not cancel the other: a partial release is easier to
+      # complete than one that never started.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # electron-vite 5 requires Node 20.19+ or 22.12+.
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Add the macOS Intel sharp binary
+        if: runner.os == 'macOS'
+        # npm installs only the sharp binary matching the host (the runner is arm64), so the
+        # x64 dmg and zip would ship without one. These flags are sharp's documented way to
+        # fetch a binary for another architecture.
+        run: npm install --no-save --cpu=x64 --os=darwin @img/sharp-darwin-x64
+
+      - name: Rebuild native module against the Electron ABI
+        # Surfaces an ABI or toolchain failure as its own step rather than inside packaging.
+        run: npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build (main, preload, renderer)
+        run: npm run build
+
+      - name: Unit tests (Vitest)
+        # Last gate before artifacts go to a public release page.
+        run: npx vitest run
+
+      - name: Package and publish
+        # No platform flag: electron-builder targets the host platform, which is exactly the
+        # matrix split. install-app-deps runs first and rebuilds native deps per target arch.
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS only, ignored elsewhere. Keeps the build unsigned and deterministic.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
