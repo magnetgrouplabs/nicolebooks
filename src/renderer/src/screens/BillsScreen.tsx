@@ -458,15 +458,15 @@ export function PhoneUploadPanel({
       )}
 
       <p
-        className="flex items-center gap-2 font-sans text-sm font-medium text-foreground"
+        className="flex items-start gap-2.5 font-sans text-sm font-medium text-foreground"
         aria-live="polite"
       >
         <span
           aria-hidden="true"
           className={
             receivedCount > 0
-              ? 'size-1.5 shrink-0 rounded-full bg-success'
-              : 'size-1.5 shrink-0 rounded-full bg-muted-foreground/40'
+              ? 'mt-1.5 size-1.5 shrink-0 rounded-full bg-success'
+              : 'mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/40'
           }
         />
         {phoneReceivedLine(receivedCount)}

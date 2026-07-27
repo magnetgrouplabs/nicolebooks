@@ -572,7 +572,7 @@ export function ReviewRowCard({
       {/* WHAT THE DOCUMENT SAID. Stays visible above the controls so a correction never hides the
           claim it corrected. */}
       {row.parsed && (
-        <div className="rounded-md border-l-2 border-border bg-muted/50 px-4 py-3">
+        <div className="rounded-md border-y border-r border-border border-l-2 border-l-muted-foreground/30 bg-muted px-4 py-3">
           <ParsedFieldList fields={row.parsed} flags={flags} />
         </div>
       )}
