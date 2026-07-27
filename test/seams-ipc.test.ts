@@ -18,6 +18,11 @@
 //   4. Every stub rejects with the NOT_IMPLEMENTED user copy, not with a code, a stack, or raw
 //      error text. This is the same no-raw-error-text discipline test/ai-ipc.test.ts pins.
 //
+// AS EACH GROUP LANDS its rows move out of the stub lists below and into that group's own spec,
+// which asserts the SAME four properties against the real body. The registration list at the top
+// stays exhaustive either way, so a group that loses a channel still fails here.
+//   - upload + ingestion:pick-files (INGEST-UX): now covered by test/upload-ipc.test.ts.
+//
 // electron is mocked so ipcMain.handle registrations are captured instead of touching a real IPC
 // bus (the test/ingestion-ipc-scan.test.ts pattern), and trusted-sender is a no-op so this targets
 // the PAYLOAD gate rather than the sender gate (e2e/ipc-boundary.spec.ts covers the latter).
@@ -37,7 +42,11 @@ vi.mock('electron', () => ({
     }
   },
   // The broadcast helpers import BrowserWindow at module load; never exercised here.
-  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null }
+  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
+  // registerUploadIpc attaches its quit hook at registration time, and the picker imports the
+  // dialog at module load. Neither is exercised here (test/upload-ipc.test.ts drives both).
+  app: { on: (): void => {} },
+  dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) }
 }))
 
 vi.mock('../src/main/ipc/trusted-sender', () => ({
@@ -144,11 +153,9 @@ describe('payload-free channels gate correctly', () => {
     Channels.qboSyncReference,
     Channels.qboGetReference,
     Channels.postingBatches,
-    Channels.postingUndoLast,
-    Channels.ingestionPickFiles,
-    Channels.uploadStart,
-    Channels.uploadStop,
-    Channels.uploadStatus
+    Channels.postingUndoLast
+    // upload:start / upload:stop / upload:status / ingestion:pick-files are implemented; the same
+    // two assertions run against their real bodies in test/upload-ipc.test.ts.
   ]
 
   // The zero-arity preload call sends undefined. A handler that parsed a bare `raw` would fail
@@ -314,11 +321,8 @@ describe('stubs reject with mapped copy, never a code or raw error text', () => 
     [Channels.postingBatches, undefined],
     [Channels.postingBatchDetail, { batchId: 'b1' }],
     [Channels.postingUndoLast, undefined],
-    [Channels.postingSummary, { batchId: 'b1' }],
-    [Channels.ingestionPickFiles, undefined],
-    [Channels.uploadStart, undefined],
-    [Channels.uploadStop, undefined],
-    [Channels.uploadStatus, undefined]
+    [Channels.postingSummary, { batchId: 'b1' }]
+    // The upload group is implemented; its error mapping is pinned in test/upload-ipc.test.ts.
   ]
 
   it.each(everyStub)('%s rejects with the NOT_IMPLEMENTED user copy', async (channel, raw) => {
