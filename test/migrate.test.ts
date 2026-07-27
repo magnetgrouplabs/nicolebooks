@@ -5,18 +5,23 @@
 // :memory:) so the persistence-across-reopen behavior is genuinely exercised.
 //
 // Behaviors covered:
-//   1. a fresh database reports user_version 0, and after migrate() it reports 3 (Phase 1's
-//      migration0001, Phase 2's migration0002 and Phase 3's migration0003 all apply)
+//   1. a fresh database reports user_version 0, and after migrate() it reports 4 (Phase 1's
+//      migration0001, Phase 2's migration0002, Phase 3's migration0003 and the finish sprint's
+//      migration0004 all apply)
 //   2. after migrate() the app_settings table exists with columns key and value
 //   3. running migrate() a second time is a no-op and does not throw (idempotent)
-//   4. the table set is exactly ['app_settings', 'posted_file_hashes', 'parsed_results'] —
-//      per D-15 each feature table is added by its owning phase's migration; Phase 2 owns the
-//      dedupe ledger posted_file_hashes (migration0002) and Phase 3 owns the parsed-results
-//      cache (migration0003)
+//   4. the table set is exactly ['app_settings', 'posted_file_hashes', 'parsed_results',
+//      'qbo_reference'] — per D-15 each feature table is added by its owning phase's migration;
+//      Phase 2 owns the dedupe ledger posted_file_hashes (migration0002), Phase 3 owns the
+//      parsed-results cache (migration0003), and the finish sprint's QBO-CONNECT owns the
+//      QuickBooks reference cache (migration0004)
 //   5. posted_file_hashes exposes the dedupe-ledger columns
 //   6. parsed_results exposes the 21 D-24 columns, is STRICT, declares no BOOLEAN column
 //      (RESEARCH Pitfall 8), and keys on file_hash (the Phase 2 SHA-256, D-14)
-//   7. an EXISTING database already at user_version 2 upgrades forward to 3 without losing
+//   6b. qbo_reference is STRICT, keys on (realm_id, entity_kind, entity_id) so one company's
+//      reference data can never overwrite another's and a Vendor id cannot collide with an Item
+//      id, and stores its active flag as an INTEGER (migration0004)
+//   7. an EXISTING database already at user_version 2 upgrades forward to 4 without losing
 //      its Phase 1/2 data — the forward-only ratchet applied to a real upgrade, not just to
 //      a fresh install
 //   8. a value written to app_settings survives closing and reopening the same file
@@ -95,13 +100,13 @@ const PARSED_RESULTS_COLUMNS = [
 ]
 
 describe('migrate()', () => {
-  it('advances user_version from 0 to 3 on a fresh database', () => {
+  it('advances user_version from 0 to 4 on a fresh database', () => {
     const db = openDb()
     expect(db.pragma('user_version', { simple: true })).toBe(0)
     migrate(db)
     // migration0001 (app_settings) + migration0002 (posted_file_hashes) +
-    // migration0003 (parsed_results) all apply.
-    expect(db.pragma('user_version', { simple: true })).toBe(3)
+    // migration0003 (parsed_results) + migration0004 (qbo_reference) all apply.
+    expect(db.pragma('user_version', { simple: true })).toBe(4)
     db.close()
   })
 
@@ -118,14 +123,15 @@ describe('migrate()', () => {
     const db = openDb()
     migrate(db)
     expect(() => migrate(db)).not.toThrow()
-    expect(db.pragma('user_version', { simple: true })).toBe(3)
+    expect(db.pragma('user_version', { simple: true })).toBe(4)
     db.close()
   })
 
-  it('creates exactly the owning-phase feature tables (D-15): app_settings + posted_file_hashes + parsed_results', () => {
+  it('creates exactly the owning-phase feature tables (D-15): app_settings + posted_file_hashes + parsed_results + qbo_reference', () => {
     // D-15: each feature table is added by its owning phase's migration. Phase 1 owns
     // app_settings (migration0001); Phase 2 owns the dedupe ledger posted_file_hashes
-    // (migration0002); Phase 3 owns the parsed-results cache (migration0003, D-17/D-24).
+    // (migration0002); Phase 3 owns the parsed-results cache (migration0003, D-17/D-24);
+    // the finish sprint's QBO-CONNECT owns the reference cache (migration0004).
     // Order is by creation (migration version order).
     const db = openDb()
     migrate(db)
@@ -135,8 +141,72 @@ describe('migrate()', () => {
     expect(tables.map((t) => t.name)).toEqual([
       'app_settings',
       'posted_file_hashes',
-      'parsed_results'
+      'parsed_results',
+      'qbo_reference'
     ])
+    db.close()
+  })
+
+  it('creates qbo_reference realm scoped, STRICT, with an INTEGER active flag (migration0004)', () => {
+    // The composite key is the load-bearing part. realm_id first means one company's reference
+    // data can never overwrite another's, and entity_kind in the key means Vendor 58 and Item 58
+    // stay separate records: QuickBooks numbers each entity type independently, so a key of
+    // (realm, id) alone would silently collapse them.
+    const db = openDb()
+    migrate(db)
+
+    expect(columnNames(db, 'qbo_reference')).toEqual([
+      'realm_id',
+      'entity_kind',
+      'entity_id',
+      'name',
+      'active',
+      'account_type',
+      'account_sub_type',
+      'synced_at'
+    ])
+
+    const info = db.prepare('PRAGMA table_info(qbo_reference)').all() as Array<{
+      name: string
+      type: string
+      notnull: number
+      pk: number
+    }>
+    const keyColumns = info
+      .filter((c) => c.pk > 0)
+      .sort((a, b) => a.pk - b.pk)
+      .map((c) => c.name)
+    expect(keyColumns).toEqual(['realm_id', 'entity_kind', 'entity_id'])
+
+    // STRICT has no BOOLEAN type and better-sqlite3 will not bind a JS boolean (Pitfall 8), so the
+    // active flag has to be an INTEGER 0/1 with the coercion in qbo/reference.ts.
+    const byName = new Map(info.map((c) => [c.name, c]))
+    expect(byName.get('active')?.type).toBe('INTEGER')
+    expect(byName.get('active')?.notnull).toBe(1)
+    // Account type only applies to accounts, so it must stay nullable for vendors and items.
+    expect(byName.get('account_type')?.notnull).toBe(0)
+    expect(byName.get('account_sub_type')?.notnull).toBe(0)
+
+    const row = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'qbo_reference'")
+      .get() as { sql: string }
+    expect(row.sql).toMatch(/\)\s*STRICT\s*$/)
+
+    for (const type of info.map((c) => c.type.toUpperCase())) {
+      expect(['INTEGER', 'REAL', 'TEXT', 'BLOB', 'ANY']).toContain(type)
+    }
+
+    db.close()
+  })
+
+  it('never lets a token or a client secret reach SQLite through the qbo cache (D-05/D-12)', () => {
+    // A structural check, not a behavioural one: the reference cache stores names, ids, and types.
+    // A column that could plausibly hold a credential would be the leak, so the column list is
+    // asserted above and this asserts the intent that no column is named for one.
+    const db = openDb()
+    migrate(db)
+    const columns = columnNames(db, 'qbo_reference').join(' ')
+    expect(columns).not.toMatch(/token|secret|client_id|password/i)
     db.close()
   })
 
@@ -215,10 +285,10 @@ describe('migrate()', () => {
     db.close()
   })
 
-  it('upgrades an existing database already at user_version 2 forward to 3 without data loss', () => {
+  it('upgrades an existing database already at user_version 2 forward to 4 without data loss', () => {
     // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
-    // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply ONLY
-    // migration0003 (forward-only ratchet) and leave the existing rows untouched.
+    // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply the
+    // pending migrations in order (forward-only ratchet) and leave the existing rows untouched.
     const first = openDb()
     try {
       migration0001.up(first)
@@ -240,7 +310,7 @@ describe('migrate()', () => {
     try {
       expect(second.pragma('user_version', { simple: true })).toBe(2)
       expect(() => migrate(second)).not.toThrow()
-      expect(second.pragma('user_version', { simple: true })).toBe(3)
+      expect(second.pragma('user_version', { simple: true })).toBe(4)
       expect(columnNames(second, 'parsed_results')).toEqual(PARSED_RESULTS_COLUMNS)
 
       // Pre-existing data survived the upgrade.
@@ -264,7 +334,7 @@ describe('migrate()', () => {
     first.close()
 
     const second = openDb()
-    // Re-running migrate on the reopened file must remain a no-op (already at version 3).
+    // Re-running migrate on the reopened file must remain a no-op (already at the latest version).
     migrate(second)
     const row = second.prepare('SELECT value FROM app_settings WHERE key = ?').get('last-folder') as
       | { value: string }
