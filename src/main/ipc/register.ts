@@ -10,6 +10,7 @@ import { registerSecretsIpc } from './secrets'
 import { registerThemeIpc } from './theme'
 import { registerIngestionIpc } from './ingestion'
 import { registerAiIpc } from './ai'
+import { registerParseIpc } from './parse'
 
 /** Register every main-process IPC handler. Call once, after app 'ready' and window create. */
 export function registerIpc(): void {
@@ -18,4 +19,5 @@ export function registerIpc(): void {
   registerThemeIpc()
   registerIngestionIpc()
   registerAiIpc()
+  registerParseIpc()
 }
