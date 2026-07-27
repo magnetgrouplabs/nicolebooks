@@ -14,6 +14,17 @@
   Accent colors follow the NicoleBooks logo, not Magnet Group: the logo's
   crimson #910023 replaces the former Magnet Group electric violet, and the
   accent is a rose tint of that crimson rather than the former lavender.
+
+  DESIGN WAVE. Four things changed here and every one of them is a rule the rest
+  of the renderer now follows rather than a colour somebody liked:
+
+    1. The theme declares only what the app renders. Dead scaffold tokens are gone.
+    2. Every semantic hue ships as a PAIR, tint plus a readable same-hue label,
+       so a status chip is never a saturated slab with white text on it.
+    3. The brand red has two jobs and therefore two values: --primary is the FILL
+       under white text, --primary-vivid is the INK, and in dark mode they differ.
+    4. Elevation is theme-aware. Light lifts with a shadow, dark lifts with a
+       lighter edge, because a black shadow on a near-black surface lifts nothing.
 */
 
 /* Jost (headings). Local woff2 only, never Google Fonts (D-04). */
@@ -69,37 +80,63 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  /* The brand red at whatever lightness the CURRENT surface can carry. See :root. */
+  --color-primary-vivid: var(--primary-vivid);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-header: var(--header);
   --color-header-foreground: var(--header-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /* The modal scrim. A real token, because bg-foreground/40 inverted to a WHITE wash in dark. */
+  --color-overlay: var(--overlay);
 
-  /* Semantic status colors carried forward for later phases (D-06). */
+  /*
+    Semantic status. Each hue ships as a PAIR: the saturated hue for dots, rules and tints, and a
+    same-hue text shade that clears AA on the surface the tint sits on. A chip is a light tint of
+    the hue with the darker shade as its label (the Stripe/Atlassian treatment), never the raw
+    saturated hue as text on white and never a solid saturated fill with white text.
+  */
   --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
-  --color-info: var(--info);
-
-  /* Chart palette carried forward for later phases (D-06). */
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  --color-warning-foreground: var(--warning-foreground);
 
   /* Brand font families (tokens.json font.family), served locally. */
   --font-heading: var(--font-heading);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* Radius ladder driven by shadcn --radius (tokens.json radius). */
+  /*
+    ELEVATION, per surface class, and it differs by theme on purpose.
+
+    Light gets the professional two-layer treatment: a hairline dark ring for the edge plus a soft
+    shadow for the lift. Dark gets a semi-transparent WHITE ring, because a black drop shadow on a
+    #1a1a1a background is invisible and only a lighter edge reads as "in front of".
+  */
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+
+  /* One easing and three durations for the whole app (tokens.json motion). */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /*
+    THE RADIUS LADDER, and which rung each thing gets (tokens.json radiusUsage). Written down
+    because a blanket radius is the single most reliable way for an interface to read as generated:
+
+      structural (header, sidebar, splitters)  0            never rounded
+      controls   (buttons, inputs, comboboxes) --radius-md  0.5rem
+      surfaces   (cards, rows, panels, popups) --radius-lg  0.625rem
+      modals     (dialogs)                     --radius-2xl 1.125rem
+      chips      (badges, status pills)        full
+
+    Controls sit one rung INSIDE surfaces, which is the R_inner = R_outer - padding rule holding
+    at every nesting depth on this screen.
+  */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -120,6 +157,10 @@
      filled primary chip carries a white label at AA. */
   --primary: #910023;
   --primary-foreground: #ffffff;
+  /* The brand red used as INK (text, a 3px nav rail, a hairline) rather than as a fill. On a light
+     surface that is the logo crimson itself. In dark mode it is not: #910023 on #2a2a2a is 1.6:1,
+     which is how the sidebar's active item shipped nearly unreadable. See the .dark block. */
+  --primary-vivid: #910023;
   --secondary: #f5f5f7;
   --secondary-foreground: #343434;
   /* Header surface. The logo is fixed artwork and is never filtered, plated, or
@@ -129,10 +170,11 @@
   --header-foreground: #343434;
   --muted: #f5f5f7;
   --muted-foreground: #6e6e73;
-  /* Rose tint of the crimson. Lab L 65.3 and 4.68:1 under the #343434 label,
-     matching the lightness and contrast the former lavender held in the scale. */
-  --accent: #e28299;
-  --accent-foreground: #343434;
+  /* The rose accent (#e28299) and the chart ramp stay canonical in brand/tokens.json and are
+     deliberately NOT declared here. A stylesheet full of tokens nothing renders is the fingerprint
+     of an unedited scaffold, and every one of these was in that state: --chart-1 through --chart-5,
+     --info (a duplicate of --primary), --accent and --accent-foreground had zero references in the
+     entire renderer. They come back the day something draws with them. */
   /* Orange-red, NOT the former #ff3b30. Destructive has to read as "this needs
      you" and never as brand chrome, and #ff3b30 sat only 11 degrees of hue from
      the new crimson primary. #e8500f doubles that to 22.8 degrees while staying
@@ -142,18 +184,27 @@
   --input: #e5e5ea;
   --ring: #910023;
   --radius: 0.625rem;
+  --overlay: rgba(15, 15, 20, 0.5);
 
-  /* Semantic status (carried forward, D-06). */
+  /*
+    Semantic status pairs.
+
+    success: #28a745 is the tokens.json hue and stays the dot colour. As TEXT it is 2.9:1 on white,
+    so a chip label uses #146c2c (5.9:1 on white, 5.5:1 on its own tint).
+    warning: #f59e0b is 2.15:1 on white and unusable as text, so the label shade is #8a5200.
+
+    Warning exists because "needs your pick" is the state of nearly every row on a fresh batch. It
+    is a request, not a fault, and painting a whole screen destructive teaches the user that red
+    means nothing.
+  */
   --success: #28a745;
+  --success-foreground: #146c2c;
   --warning: #f59e0b;
-  --info: #910023;
+  --warning-foreground: #8a5200;
 
-  /* Chart palette (carried forward, D-06). */
-  --chart-1: #910023;
-  --chart-2: #e28299;
-  --chart-3: #343434;
-  --chart-4: #6e6e73;
-  --chart-5: #1d1d1f;
+  /* Elevation, light theme: a hairline ring for the edge, a soft shadow for the lift. */
+  --elevation-raised: 0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.05);
+  --elevation-overlay: 0 12px 32px rgba(15, 15, 20, 0.12), 0 0 0 1px rgba(15, 15, 20, 0.07);
 
   /* Brand font families (tokens.json font.family; served locally via @font-face). */
   --font-heading: 'Jost', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -184,6 +235,19 @@
      brand red. It also clears 3:1 on all three surfaces, which the outgoing
      lightened-violet ring did not (2.79:1 on #2a2a2a). */
   --ring: #e02a52;
+  /* Brand ink takes the same lightened crimson, for the same reason and with the same evidence.
+     --primary keeps the true logo colour, because it is a FILL under white text and works there. */
+  --primary-vivid: #e02a52;
+  --overlay: rgba(0, 0, 0, 0.66);
+
+  /* Status labels flip: the tint is dark, so the readable shade is the lighter one. */
+  --success-foreground: #6ede8a;
+  --warning-foreground: #f0b357;
+
+  /* Elevation, dark theme: a WHITE hairline does the lifting. A black drop shadow on #1a1a1a is
+     invisible, and reaching for one anyway is the tell that nobody looked at the dark build. */
+  --elevation-raised: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --elevation-overlay: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 16px 40px rgba(0, 0, 0, 0.55);
 }
 
 @layer base {
@@ -192,6 +256,24 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Money in this app is compared down a column, so its digits have to line up. Lining figures
+       everywhere is cheaper and more reliable than remembering to ask for them per cell. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  /*
+    Tracking by size, from tokens.json trackingBySize: the professional -0.022em x size curve.
+    Display type set at 0 tracking is one of the loudest "nobody set this type" signals there is.
+  */
+  h1 {
+    letter-spacing: -0.025em;
+  }
+  h2,
+  h3 {
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary-vivid), transparent 78%);
   }
 }
 
