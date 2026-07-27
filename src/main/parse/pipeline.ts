@@ -152,6 +152,21 @@ const PIXEL_BUDGET = 'PARSE_PIXEL_BUDGET'
  * cap constants are imported from extract-fields.ts so the two layers cannot drift, and that
  * module still applies its own cap as the backstop for any other caller.
  */
+/**
+ * Characters of embedded PDF text carried on the wire (D-21's other half, threat T-03-02).
+ *
+ * The page cap above bounds the IMAGES but the belt-and-suspenders text was unbounded: every page
+ * of the PDF, joined, on the primary call AND again on the repair re-ask. Nothing upstream bounds
+ * it either — Phase 2's scan records sizeBytes but never rejects on it, and ParseBatchSchema
+ * bounds only the array length. A 400-page vendor statement therefore put hundreds of thousands
+ * of tokens in a single paid request, possibly twice, and a likely context-length 400 on top.
+ *
+ * 50k characters is well past any real bill (a dense A4 invoice page runs ~3k) while keeping the
+ * request bounded. Clipping participates in the same `truncated` flag the page cap sets, so the
+ * user is never silently shown a partial read.
+ */
+export const MAX_REFERENCE_TEXT_CHARS = 50_000
+
 export function selectPageIndexes(pageCount: number): { indexes: number[]; truncated: boolean } {
   const count = Number.isFinite(pageCount) && pageCount > 0 ? Math.floor(pageCount) : 1
   if (count <= MAX_PAGE_IMAGES) return { indexes: range(0, count), truncated: false }
@@ -394,17 +409,21 @@ async function prepareDocument(
     // rendered pages. The prompt declares the image ground truth and the text a noisy reference,
     // so the text anchors totals without being able to override a correctly-read page.
     let referenceText: string | null = null
+    let textClipped = false
     if (decision.route === 'native') {
       const extracted = await ctx.extractPdfText(bytes)
       const joined = (extracted?.text ?? []).join('\n\n').trim()
-      referenceText = joined === '' ? null : joined
+      // Bounded exactly like the images are (MAX_REFERENCE_TEXT_CHARS), and a clip is reported
+      // through the same `truncated` flag rather than swallowed.
+      textClipped = joined.length > MAX_REFERENCE_TEXT_CHARS
+      referenceText = joined === '' ? null : joined.slice(0, MAX_REFERENCE_TEXT_CHARS)
     }
 
     const imageDataUrls: string[] = []
     for (const pageIndex of selection.indexes) {
       imageDataUrls.push(toJpegDataUrl(await ctx.renderPdfPageImage(bytes, pageIndex)))
     }
-    return { referenceText, imageDataUrls, truncated: selection.truncated }
+    return { referenceText, imageDataUrls, truncated: selection.truncated || textClipped }
   }
 
   // A raw photo: one image, no text layer to pair, and the pre-decode pixel budget first.

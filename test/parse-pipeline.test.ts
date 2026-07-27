@@ -36,7 +36,12 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { migrate } from '../src/main/db/migrate'
 import { getCached } from '../src/main/parse/cache'
-import { parseBatch, selectPageIndexes, type ParseDeps } from '../src/main/parse/pipeline'
+import {
+  MAX_REFERENCE_TEXT_CHARS,
+  parseBatch,
+  selectPageIndexes,
+  type ParseDeps
+} from '../src/main/parse/pipeline'
 import {
   makeChatResponse,
   makeFakeClient,
@@ -470,6 +475,38 @@ describe('the D-21 page cap (both PDF branches)', () => {
     expect(rendered).toEqual([0, 1, 2, 10, 11])
     expect(result.files[0].truncated).toBe(true)
     expect(getCached(db, hashOf('long-scan.pdf'))?.truncated).toBe(true)
+  })
+
+  // WR-03: the cap bounded the IMAGES but the belt-and-suspenders text was unbounded, and it
+  // rides on the primary call AND the repair re-ask.
+  it('caps the reference text and reports the clip as truncation', async () => {
+    const client = makeFakeClient({ parsedObject: BILL })
+    // A 400-page vendor statement: ~800k characters of embedded text.
+    const pages = Array.from({ length: 400 }, (_, i) => `PAGE${i} ${'lorem ipsum '.repeat(160)}`)
+
+    const result = await parseBatch(
+      [batchFile('statement.pdf')],
+      deps({
+        client,
+        routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
+        extractPdfText: async () => ({ totalPages: 400, text: pages })
+      })
+    )
+
+    const onTheWire = requestText(chatArgs(client)[0])
+    expect(onTheWire).toContain('PAGE0 ') // the head of the document still anchors the read
+    expect(onTheWire).not.toContain('PAGE399') // ...but not 800k characters of it
+    // The prompt itself is a few thousand characters; the reference text is what is bounded.
+    expect(onTheWire.length).toBeLessThan(MAX_REFERENCE_TEXT_CHARS + 10_000)
+    expect(result.files[0].truncated).toBe(true)
+    expect(getCached(db, hashOf('statement.pdf'))?.truncated).toBe(true)
+  })
+
+  it('leaves a normal bill reference text untouched and untruncated', async () => {
+    const client = makeFakeClient({ parsedObject: BILL })
+    const result = await parseBatch([batchFile('invoice.pdf')], deps({ client }))
+    expect(requestText(chatArgs(client)[0])).toContain('Total $1,336.00')
+    expect(result.files[0].truncated).toBe(false)
   })
 
   it('leaves truncated false for a document inside the cap', async () => {
