@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { getDatabase } from './db/connection'
 import { migrate } from './db/migrate'
 import { registerIpc } from './ipc/register'
+import { parseDevQboCommand, runDevQboCommand } from './qbo/dev-cli'
 import { initAutoUpdater } from './updater'
 
 // Dev vs packaged: electron-vite injects ELECTRON_RENDERER_URL during `electron-vite dev`.
@@ -71,6 +72,21 @@ if (!app.requestSingleInstanceLock()) {
     // (idempotent). This runs after app 'ready' because app.getPath needs the app initialized.
     const db = getDatabase()
     migrate(db)
+
+    // Development-only QuickBooks bootstrap (--dev-seed-qbo and friends). It runs after the
+    // database and safeStorage are ready, prints a redacted report, and exits WITHOUT creating a
+    // window, so it never leaves a stray app running. Guarded on app.isPackaged, so the flags are
+    // inert in a shipped installer. See src/main/qbo/dev-cli.ts for the rotation protocol.
+    const devQboCommand = app.isPackaged ? null : parseDevQboCommand(process.argv)
+    if (devQboCommand) {
+      runDevQboCommand(devQboCommand, process.argv, [app.getAppPath(), process.cwd()])
+        .catch((err: unknown) => {
+          process.exitCode = 1
+          process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+        })
+        .finally(() => app.quit())
+      return
+    }
 
     const win = createWindow()
 

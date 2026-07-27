@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3'
 import { migration0001 } from './migrations/0001_init'
 import { migration0002 } from './migrations/0002_dedupe'
 import { migration0003 } from './migrations/0003_parsed_results'
+import { migration0004 } from './migrations/0004_qbo_reference'
 
 export type Migration = { version: number; up: (db: Database.Database) => void }
 
@@ -31,12 +32,13 @@ export type Migration = { version: number; up: (db: Database.Database) => void }
 // which the runner would silently apply only the first (the second's version is no longer
 // greater than user_version). Use YOUR number, not the next free one:
 //   0004 -- qbo reference cache (vendors, expense accounts, payment accounts, items). QBO-CONNECT.
+//          LANDED: migrations/0004_qbo_reference.ts, one realm-scoped STRICT table.
 //   0005 -- posting batches + per-entry audit ledger. POSTING-ENGINE.
 // Any migration beyond 0005 needs a number assigned by Fable. Add the import above, append the
 // entry here in ascending order, and follow the 0002/0003 shape: one STRICT table, integer cents
 // for money, INTEGER 0/1 for booleans (STRICT has no BOOLEAN and better-sqlite3 will not bind a
 // JS boolean), and never any secret material.
-const migrations: Migration[] = [migration0001, migration0002, migration0003]
+const migrations: Migration[] = [migration0001, migration0002, migration0003, migration0004]
 
 export function migrate(db: Database.Database): void {
   const current = db.pragma('user_version', { simple: true }) as number

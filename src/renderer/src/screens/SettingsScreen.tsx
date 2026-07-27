@@ -26,7 +26,7 @@ import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { HealthIndicator } from '../components/HealthIndicator'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import type { ModelInfo } from '@shared/ipc-contract'
+import type { ModelInfo, QboStatus, QboSyncResult } from '@shared/ipc-contract'
 
 // Storage keys are written as literals at each call site so a reader can see exactly what leaves
 // this screen. They must stay in step with the main-side readers: 'ai-api-key' / 'ai-base-url' in
@@ -91,6 +91,48 @@ export function connectBlockedReason(input: {
   return null
 }
 
+/**
+ * app_settings key recording that an Intuit client id and client secret have been saved.
+ *
+ * Non-secret by construction: it is the string '1', never the credentials themselves. The
+ * credentials go to the OS keychain and are denied read-back (src/main/qbo/secret-keys.ts), so this
+ * flag is the ONLY way the form can honestly say "saved" after a restart instead of pretending
+ * nothing was ever entered.
+ */
+const QBO_CLIENT_CONFIGURED_SETTING = 'qbo-client-configured'
+
+/**
+ * The connection chip's text. Pure and exported so the wording is testable without a DOM.
+ *
+ * 'expired' says "Reconnect needed" rather than "Not connected" on purpose: the fix is one click on
+ * a button that reopens the same consent screen, and telling somebody their setup is gone would
+ * invite them to start over instead.
+ */
+export function qboStatusLabel(status: QboStatus | null): string {
+  if (!status) return 'Checking your QuickBooks connection...'
+  if (status.state === 'connected') {
+    return status.companyName ? `Connected to ${status.companyName}` : 'Connected to QuickBooks'
+  }
+  if (status.state === 'expired') return 'Reconnect needed'
+  return 'Not connected'
+}
+
+/** Plain-language counts after a sync. Pure and exported so the copy is testable. */
+export function qboSyncSummary(result: QboSyncResult): string {
+  return (
+    `Refreshed ${result.vendors} vendors, ${result.expenseAccounts} expense categories, ` +
+    `${result.paymentAccounts} payment accounts, and ${result.items} items.`
+  )
+}
+
+/** Human-readable "last synced" line. Falls back to the raw value if it will not parse. */
+export function formatSyncTime(iso: string | null): string {
+  if (!iso) return 'Not synced yet'
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) return `Last synced ${iso}`
+  return `Last synced ${parsed.toLocaleString()}`
+}
+
 /** Vision-capable models get a badge; unbadged ones require the D-01 confirm before selection. */
 function VisionBadge({ vision }: { vision: ModelInfo['vision'] }): React.JSX.Element | null {
   if (vision === 'vision') return <Badge variant="default">Vision</Badge>
@@ -118,6 +160,19 @@ export function SettingsScreen(): React.JSX.Element {
   const [modelFilter, setModelFilter] = useState('')
   const [selectedModel, setSelectedModelState] = useState<string | null>(null)
   const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null)
+
+  // --- QuickBooks connection state -------------------------------------------------------
+  // Transient only, exactly like the AI key: both credentials are written straight to the OS
+  // keychain and cleared from state. Neither is ever read back, and the main-side getter refuses to
+  // serve them regardless (src/main/ipc/secrets.ts deny-list).
+  const [qboClientId, setQboClientId] = useState('')
+  const [qboClientSecret, setQboClientSecret] = useState('')
+  const [qboClientSaved, setQboClientSaved] = useState(false)
+  const [savingQboClient, setSavingQboClient] = useState(false)
+  const [qboStatus, setQboStatus] = useState<QboStatus | null>(null)
+  const [qboBusy, setQboBusy] = useState<'connect' | 'disconnect' | 'sync' | null>(null)
+  const [qboError, setQboError] = useState<string | null>(null)
+  const [qboNotice, setQboNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -163,6 +218,117 @@ export function SettingsScreen(): React.JSX.Element {
       cancelled = true
     }
   }, [])
+
+  // Read the connection once on mount, then follow the qbo:status-changed broadcast. The broadcast
+  // is what keeps this card correct when the state changes somewhere other than a button press
+  // here: a refresh that came back invalid_grant flips it to Reconnect with no user action at all.
+  useEffect(() => {
+    let cancelled = false
+    async function loadQbo(): Promise<void> {
+      try {
+        const status = await window.api.qbo.status()
+        if (!cancelled) setQboStatus(status)
+      } catch {
+        if (!cancelled) setQboStatus(null)
+      }
+      try {
+        const configured = await window.api.settings.get(QBO_CLIENT_CONFIGURED_SETTING)
+        if (!cancelled) setQboClientSaved(configured === '1')
+      } catch {
+        if (!cancelled) setQboClientSaved(false)
+      }
+    }
+    void loadQbo()
+    // The subscription returns its own disposer, so this cleanup removes exactly this listener.
+    const unsubscribe = window.api.qbo.onStatusChanged((status) => setQboStatus(status))
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
+  /**
+   * Store the Intuit app credentials. Write-only: both go to the keychain and are cleared from
+   * state immediately, and the non-secret "configured" flag is written AFTER they land, so a failed
+   * write never claims credentials that were not stored (the same ordering as the AI key).
+   */
+  async function saveQboClientCredentials(): Promise<void> {
+    const id = qboClientId.trim()
+    const secret = qboClientSecret.trim()
+    if (!id || !secret) {
+      setQboError('Enter both the client id and the client secret from your Intuit app.')
+      return
+    }
+    setSavingQboClient(true)
+    setQboError(null)
+    setQboNotice(null)
+    try {
+      await window.api.secrets.set('qbo-client-id', id)
+      await window.api.secrets.set('qbo-client-secret', secret)
+      await window.api.settings.set(QBO_CLIENT_CONFIGURED_SETTING, '1')
+      setQboClientId('')
+      setQboClientSecret('')
+      setQboClientSaved(true)
+      setQboNotice('Saved. You can connect to QuickBooks now.')
+    } catch {
+      setQboError('Could not save those QuickBooks keys on this machine. Please try again.')
+    } finally {
+      setSavingQboClient(false)
+    }
+  }
+
+  /** Connect and Reconnect are the same action: both open the Intuit consent screen. */
+  async function connectQuickBooks(): Promise<void> {
+    setQboBusy('connect')
+    setQboError(null)
+    setQboNotice('Finish signing in to QuickBooks in your browser, then come back here.')
+    try {
+      const status = await window.api.qbo.connect()
+      setQboStatus(status)
+      setQboNotice(
+        status.state === 'connected'
+          ? 'Connected. Choose Sync now to load your vendors and categories.'
+          : null
+      )
+    } catch (err) {
+      // The main handler already mapped this to fixed, recoverable copy; it never carries raw
+      // error text, a host, or a realm id.
+      setQboNotice(null)
+      setQboError(err instanceof Error ? err.message : 'Could not connect to QuickBooks.')
+    } finally {
+      setQboBusy(null)
+    }
+  }
+
+  async function disconnectQuickBooks(): Promise<void> {
+    setQboBusy('disconnect')
+    setQboError(null)
+    setQboNotice(null)
+    try {
+      const status = await window.api.qbo.disconnect()
+      setQboStatus(status)
+      setQboNotice('Disconnected. Your QuickBooks keys are still saved on this machine.')
+    } catch (err) {
+      setQboError(err instanceof Error ? err.message : 'Could not disconnect from QuickBooks.')
+    } finally {
+      setQboBusy(null)
+    }
+  }
+
+  async function syncQuickBooksReference(): Promise<void> {
+    setQboBusy('sync')
+    setQboError(null)
+    setQboNotice(null)
+    try {
+      const result = await window.api.qbo.syncReference()
+      setQboNotice(qboSyncSummary(result))
+      setQboStatus(await window.api.qbo.status())
+    } catch (err) {
+      setQboError(err instanceof Error ? err.message : 'Could not read your QuickBooks lists.')
+    } finally {
+      setQboBusy(null)
+    }
+  }
 
   async function chooseInbox(): Promise<void> {
     setChoosing(true)
@@ -265,6 +431,9 @@ export function SettingsScreen(): React.JSX.Element {
           (m.label ?? '').toLowerCase().includes(filterText)
       )
     : models
+
+  const qboConnected = qboStatus?.state === 'connected'
+  const qboExpired = qboStatus?.state === 'expired'
 
   const StatusIcon = aiStatus === 'error' ? ShieldAlert : ShieldCheck
   const statusIconColor =
@@ -472,6 +641,130 @@ export function SettingsScreen(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      <h2 className="font-sans text-sm font-semibold text-muted-foreground">
+        QuickBooks connection
+      </h2>
+
+      <div className="max-w-xl rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center gap-2">
+          {qboConnected ? (
+            <Badge variant="default">Connected</Badge>
+          ) : qboExpired ? (
+            <Badge variant="secondary">Reconnect needed</Badge>
+          ) : (
+            <Badge variant="outline">Not connected</Badge>
+          )}
+          <span className="text-sm font-semibold text-card-foreground">
+            {qboStatusLabel(qboStatus)}
+          </span>
+        </div>
+        <p className="mt-1 font-sans text-sm text-muted-foreground">
+          {qboConnected || qboExpired
+            ? formatSyncTime(qboStatus?.lastSyncAt ?? null)
+            : 'Connect NicoleBooks to your QuickBooks company so it can read your vendors, categories, and payment accounts.'}
+        </p>
+        {qboStatus?.realmId && (
+          <p className="mt-1 font-mono text-sm text-muted-foreground">
+            Company id {qboStatus.realmId}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button disabled={qboBusy !== null} onClick={() => void connectQuickBooks()}>
+          {qboBusy === 'connect'
+            ? 'Waiting for your browser...'
+            : qboExpired
+              ? 'Reconnect to QuickBooks'
+              : qboConnected
+                ? 'Connect a different company'
+                : 'Connect to QuickBooks'}
+        </Button>
+        {(qboConnected || qboExpired) && (
+          <>
+            <Button
+              variant="outline"
+              disabled={qboBusy !== null || qboExpired}
+              onClick={() => void syncQuickBooksReference()}
+            >
+              {qboBusy === 'sync' ? 'Syncing...' : 'Sync now'}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={qboBusy !== null}
+              onClick={() => void disconnectQuickBooks()}
+            >
+              {qboBusy === 'disconnect' ? 'Disconnecting...' : 'Disconnect'}
+            </Button>
+          </>
+        )}
+      </div>
+
+      {qboNotice && (
+        <p className="max-w-xl rounded-lg border border-border bg-card px-3 py-2 font-sans text-sm text-muted-foreground">
+          {qboNotice}
+        </p>
+      )}
+
+      {qboError && (
+        <p
+          role="alert"
+          className="max-w-xl rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+        >
+          {qboError}
+        </p>
+      )}
+
+      <h3 className="font-sans text-sm font-medium text-foreground">QuickBooks app keys</h3>
+      <p className="max-w-xl font-sans text-sm text-muted-foreground">
+        These come from your Intuit developer app and are needed once, before the first connection.
+        They are stored in this machine&apos;s secure keychain and are never shown again.
+      </p>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="qbo-client-id" className="font-sans text-sm font-medium text-foreground">
+          Client id
+        </label>
+        <input
+          id="qbo-client-id"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          className={FIELD_CLASS}
+          placeholder={qboClientSaved ? 'Saved. Type a new client id to replace it.' : 'Paste your client id'}
+          value={qboClientId}
+          onChange={(e) => setQboClientId(e.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="qbo-client-secret" className="font-sans text-sm font-medium text-foreground">
+          Client secret
+        </label>
+        <input
+          id="qbo-client-secret"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          className={FIELD_CLASS}
+          placeholder={
+            qboClientSaved ? 'Saved. Type a new client secret to replace it.' : 'Paste your client secret'
+          }
+          value={qboClientSecret}
+          onChange={(e) => setQboClientSecret(e.target.value)}
+        />
+      </div>
+
+      <div>
+        <Button
+          variant="outline"
+          disabled={savingQboClient}
+          onClick={() => void saveQboClientCredentials()}
+        >
+          {savingQboClient ? 'Saving...' : 'Save QuickBooks keys'}
+        </Button>
+      </div>
     </div>
   )
 }
