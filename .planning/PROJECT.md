@@ -31,7 +31,7 @@ Turn a folder of mixed bill documents into correctly categorized, non-duplicate 
 - [ ] Undo-last-batch: one-click void in QuickBooks of the most recent batch if something went wrong
 - [ ] After sending, the app produces a batch summary the user can save or print
 - [ ] Settings: user enters an OpenAI-compatible API key, the app pulls available models, and the user picks the model to use
-- [ ] App is branded with the Magnet Group brand tokens (colors and fonts), using a plain "NicoleBooks" wordmark and no logo
+- [ ] App is branded with the real NicoleBooks logo (a crimson stiletto over stacked pages) in the header, on a color scheme taken from that logo. Type and the surface/spacing scales are still the Magnet Group tokens; the accent colors are not.
 - [ ] User connects the app to QuickBooks Online via OAuth and the connection stays alive through automatic token refresh
 
 ### Out of Scope
@@ -74,6 +74,8 @@ Turn a folder of mixed bill documents into correctly categorized, non-duplicate 
 | QuickBooks integration built and tested against sandbox first, with a hard pause for live credentials | Anthony lacks QuickBooks access now; sandbox lets everything else proceed and de-risks the live wire-up | Pending |
 | Defer source-file attachment to QuickBooks entries | User did not select it for v1; reduces initial API surface | Pending |
 | Electron chosen over Tauri/Rust for the desktop framework | Node backend ecosystem covers every dependency (intuit-oauth, OpenAI SDK, PDF, sharp+HEIC, better-sqlite3, safeStorage); builder is JS/TS not Rust; safeStorage plus electron-builder plus electron-updater give the lowest deployment headache. User confirmed 2026-07-22 after reviewing the research reasoning. | Confirmed |
+| Brand the app on the NicoleBooks logo rather than Magnet Group (2026-07-27) | The user supplied a real NicoleBooks logo, a crimson stiletto over stacked pages, which retires two earlier assumptions: that the product had no logo and would ship a plain text wordmark, and that it would carry Magnet Group's colors. Magnet Group is the builder, not the client, so its electric violet was only ever a placeholder. The header now renders the logo lockup and the accent palette is taken from the artwork: primary, ring, info and chart-1 move from #6c00ff to the logo's #910023 crimson, and the accent moves from lavender to a rose tint of it. Type, surfaces, spacing and radius stay on the inherited Magnet Group scales. | Confirmed |
+| Dark mode needs a second logo asset (2026-07-27, open) | The supplied lockup is light-background only. Its wordmark uses just two inks, #910023 and #000000, which measure 1.52:1 and 1.46:1 on the dark header surface, so the wordmark vanishes when the OS is in dark mode and the theme follows the OS live. Shipped a white knockout as a stopgap; CSS filter alternatives either recolor the crimson to the wrong hue or come out lopsided against the artwork's dead canvas. Wants a proper dark variant from the designer. | Open |
 
 ## Evolution
 

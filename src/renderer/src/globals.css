@@ -12,8 +12,8 @@
   Fonts are bundled woff2 served locally via @font-face, never a CDN (D-04).
 
   Accent colors follow the NicoleBooks logo, not Magnet Group: the logo's
-  crimson #910023 replaces the former electric violet #6c00ff, and the accent
-  is a rose tint of that crimson rather than the former lavender.
+  crimson #910023 replaces the former Magnet Group electric violet, and the
+  accent is a rose tint of that crimson rather than the former lavender.
 */
 
 /* Jost (headings). Local woff2 only, never Google Fonts (D-04). */
@@ -172,7 +172,7 @@
      #e02a52 holds 3.83:1 on --background, 3.42:1 on --card and 3.16:1 on
      --popover while drifting just 6 degrees of hue, so it still reads as the
      brand red. It also clears 3:1 on all three surfaces, which the outgoing
-     #8f33ff did not (2.79:1 on #2a2a2a). */
+     lightened-violet ring did not (2.79:1 on #2a2a2a). */
   --ring: #e02a52;
 }
 
