@@ -4,10 +4,10 @@
 //
 // Every handler runs assertTrustedSender(event) as its FIRST statement (mirrors settings.ts /
 // theme.ts), so a frame that is not this app's own renderer is rejected before any fs/DB/dialog
-// work. The scan handler additionally Zod-parses the (empty) payload with ScanRequestSchema
-// before running: scan takes NO renderer-supplied path, the inbox is read server-side, which
-// removes the path-injection surface (T-02-02). All fs/hash/db runs here in main, never in the
-// renderer.
+// work. The scan handler additionally normalizes its payload (the preload sends none) and then
+// Zod-parses it with the strict-empty ScanRequestSchema before running: scan takes NO
+// renderer-supplied path, the inbox is still resolved server-side, which removes the
+// path-injection surface (T-02-02). All fs/hash/db runs here in main, never in the renderer.
 
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { Channels } from '../../shared/ipc-contract'
@@ -38,7 +38,10 @@ export function registerIngestionIpc(): void {
 
   ipcMain.handle(Channels.ingestionScan, async (event, raw) => {
     assertTrustedSender(event)
-    ScanRequestSchema.parse(raw) // rejects any payload before any privileged work (T-02-02)
+    // The preload invokes this with no argument, so raw is undefined; normalizing to {} keeps the
+    // strict-empty gate intact (any actual payload still throws before runScan, T-02-02) without
+    // rejecting the real call. Do not delete this parse: it is the path-injection guard.
+    ScanRequestSchema.parse(raw ?? {})
     return runScan() // resolves the inbox path server-side; no renderer path reaches fs
   })
 }
