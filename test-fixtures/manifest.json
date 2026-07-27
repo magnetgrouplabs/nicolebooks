@@ -1,0 +1,814 @@
+{
+  "realmId": "9341457604445280",
+  "generatedAt": "2026-07-27T19:45:11.220Z",
+  "documents": [
+    {
+      "file": "bills/apex-plumbing-supply-invoice-APX-84213.pdf",
+      "kind": "text-pdf",
+      "docType": "invoice",
+      "printedVendor": "Apex Plumbing Supply",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Apex Plumbing Supply",
+        "vendorId": "58"
+      },
+      "referenceNumber": "APX-84213",
+      "txnDate": "2026-07-08",
+      "dueDate": "2026-08-07",
+      "terms": "Net 30",
+      "subtotalCents": 57995,
+      "taxCents": 5002,
+      "totalCents": 62997,
+      "lineCount": 4,
+      "lines": [
+        {
+          "desc": "1/2 in. Copper Pipe Type L, 10 ft joint",
+          "qty": 12,
+          "unitCents": 2840,
+          "amountCents": 34080
+        },
+        {
+          "desc": "3/4 in. Brass Ball Valve, full port",
+          "qty": 8,
+          "unitCents": 1975,
+          "amountCents": 15800
+        },
+        {
+          "desc": "PVC Primer and Cement Kit, 8 oz",
+          "qty": 3,
+          "unitCents": 1425,
+          "amountCents": 4275
+        },
+        {
+          "desc": "Pipe Hanger Strap, 25 ft roll",
+          "qty": 4,
+          "unitCents": 960,
+          "amountCents": 3840
+        }
+      ],
+      "hint": {
+        "type": "Bill",
+        "account": "Job Materials (63)",
+        "paidFrom": null
+      }
+    },
+    {
+      "file": "bills/metro-fuel-oil-corp-invoice-MF-2026-0714.pdf",
+      "kind": "text-pdf",
+      "docType": "invoice",
+      "printedVendor": "Metro Fuel Oil Corp",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Metro Fuel Oil Corp",
+        "vendorId": "60"
+      },
+      "referenceNumber": "MF-2026-0714",
+      "txnDate": "2026-07-14",
+      "dueDate": "2026-07-29",
+      "terms": "Net 15",
+      "subtotalCents": 191880,
+      "taxCents": 16550,
+      "totalCents": 208430,
+      "lineCount": 3,
+      "lines": [
+        {
+          "desc": "No. 2 Heating Oil, delivered",
+          "qty": 400,
+          "unitCents": 349,
+          "amountCents": 139560
+        },
+        {
+          "desc": "Off-Road Diesel, tank fill",
+          "qty": 120,
+          "unitCents": 399,
+          "amountCents": 47820
+        },
+        {
+          "desc": "After-hours delivery surcharge",
+          "qty": 1,
+          "unitCents": 4500,
+          "amountCents": 4500
+        }
+      ],
+      "hint": {
+        "type": "Bill",
+        "account": "Fuel (56)",
+        "paidFrom": null
+      }
+    },
+    {
+      "file": "bills/brightline-electric-invoice-BE-5590.pdf",
+      "kind": "text-pdf",
+      "docType": "invoice",
+      "printedVendor": "Brightline Electric",
+      "expectedMatch": {
+        "type": "near-miss",
+        "vendorDisplayName": "Brightline Electric Supply",
+        "vendorId": "59"
+      },
+      "referenceNumber": "BE-5590",
+      "txnDate": "2026-07-16",
+      "dueDate": "2026-08-15",
+      "terms": "Net 30",
+      "subtotalCents": 62715,
+      "taxCents": 5409,
+      "totalCents": 68124,
+      "lineCount": 4,
+      "lines": [
+        {
+          "desc": "12/2 NM-B Romex Wire, 250 ft coil",
+          "qty": 2,
+          "unitCents": 11850,
+          "amountCents": 23700
+        },
+        {
+          "desc": "20A Single Pole Breaker",
+          "qty": 10,
+          "unitCents": 1230,
+          "amountCents": 12300
+        },
+        {
+          "desc": "4 in. Square Junction Box",
+          "qty": 15,
+          "unitCents": 385,
+          "amountCents": 5775
+        },
+        {
+          "desc": "LED Shop Fixture, 4 ft",
+          "qty": 6,
+          "unitCents": 3490,
+          "amountCents": 20940
+        }
+      ],
+      "hint": {
+        "type": "Bill",
+        "account": "Job Materials (63)",
+        "paidFrom": null
+      }
+    },
+    {
+      "file": "bills/quality-craft-tools-invoice-QCT-1188.pdf",
+      "kind": "text-pdf",
+      "docType": "invoice",
+      "printedVendor": "Quality Craft Tools LLC",
+      "expectedMatch": {
+        "type": "unknown",
+        "vendorDisplayName": null,
+        "vendorId": null
+      },
+      "referenceNumber": "QCT-1188",
+      "txnDate": "2026-07-21",
+      "dueDate": "2026-08-20",
+      "terms": "Net 30",
+      "subtotalCents": 34195,
+      "taxCents": 2949,
+      "totalCents": 37144,
+      "lineCount": 3,
+      "lines": [
+        {
+          "desc": "18V Cordless Impact Driver Kit",
+          "qty": 1,
+          "unitCents": 18900,
+          "amountCents": 18900
+        },
+        {
+          "desc": "Contractor Tool Bag, 18 in.",
+          "qty": 2,
+          "unitCents": 4250,
+          "amountCents": 8500
+        },
+        {
+          "desc": "Bi-Metal Hole Saw Set, 9 piece",
+          "qty": 1,
+          "unitCents": 6795,
+          "amountCents": 6795
+        }
+      ],
+      "hint": {
+        "type": "Bill",
+        "account": "Supplies (20)",
+        "paidFrom": null
+      }
+    },
+    {
+      "file": "bills/apex-plumbing-supply-credit-memo-CM-3307.pdf",
+      "kind": "text-pdf",
+      "docType": "credit-memo",
+      "printedVendor": "Apex Plumbing Supply",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Apex Plumbing Supply",
+        "vendorId": "58"
+      },
+      "referenceNumber": "CM-3307",
+      "txnDate": "2026-07-23",
+      "dueDate": null,
+      "terms": "Credit applied to account",
+      "subtotalCents": -13580,
+      "taxCents": -1171,
+      "totalCents": -14751,
+      "lineCount": 2,
+      "lines": [
+        {
+          "desc": "3/4 in. Brass Ball Valve, returned unused",
+          "qty": -4,
+          "unitCents": 1975,
+          "amountCents": -7900
+        },
+        {
+          "desc": "1/2 in. Copper Pipe Type L, damaged in transit",
+          "qty": -2,
+          "unitCents": 2840,
+          "amountCents": -5680
+        }
+      ],
+      "hint": {
+        "type": "Bill (negative) or Vendor Credit",
+        "account": "Job Materials (63)",
+        "paidFrom": null
+      }
+    },
+    {
+      "file": "bills/northside-auto-parts-receipt.jpg",
+      "kind": "raster-receipt",
+      "docType": "receipt",
+      "printedVendor": "NORTHSIDE AUTO PARTS",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Northside Auto Parts",
+        "vendorId": "62"
+      },
+      "referenceNumber": "0214-118-4471",
+      "txnDate": "2026-07-11",
+      "dueDate": null,
+      "terms": null,
+      "subtotalCents": 13892,
+      "taxCents": 1198,
+      "totalCents": 15090,
+      "lineCount": 4,
+      "lines": [
+        {
+          "desc": "AC DELCO OIL FILTER PF63",
+          "qty": 3,
+          "unitCents": 1149,
+          "amountCents": 3447
+        },
+        {
+          "desc": "MOBIL 1 5W-30 5QT",
+          "qty": 2,
+          "unitCents": 3299,
+          "amountCents": 6598
+        },
+        {
+          "desc": "WIPER BLADE 22IN",
+          "qty": 2,
+          "unitCents": 1499,
+          "amountCents": 2998
+        },
+        {
+          "desc": "SHOP TOWELS 50CT",
+          "qty": 1,
+          "unitCents": 849,
+          "amountCents": 849
+        }
+      ],
+      "hint": {
+        "type": "Expense (Purchase)",
+        "account": "Automobile (55)",
+        "paidFrom": "Visa (42), Credit Card"
+      }
+    },
+    {
+      "file": "bills/cedar-lane-landscaping-receipt.jpg",
+      "kind": "raster-receipt",
+      "docType": "receipt",
+      "printedVendor": "CEDAR LANE LANDSCAPING",
+      "expectedMatch": {
+        "type": "near-miss",
+        "vendorDisplayName": "Cedar Lane Landscaping Supply",
+        "vendorId": "61"
+      },
+      "referenceNumber": "CL-77213",
+      "txnDate": "2026-07-17",
+      "dueDate": null,
+      "terms": null,
+      "subtotalCents": 24713,
+      "taxCents": 2131,
+      "totalCents": 26844,
+      "lineCount": 4,
+      "lines": [
+        {
+          "desc": "PREMIUM TOPSOIL 40LB BAG",
+          "qty": 20,
+          "unitCents": 479,
+          "amountCents": 9580
+        },
+        {
+          "desc": "HARDWOOD MULCH 2CU FT",
+          "qty": 15,
+          "unitCents": 549,
+          "amountCents": 8235
+        },
+        {
+          "desc": "LANDSCAPE FABRIC 3X50",
+          "qty": 2,
+          "unitCents": 2199,
+          "amountCents": 4398
+        },
+        {
+          "desc": "EDGING STAKES 10PK",
+          "qty": 4,
+          "unitCents": 625,
+          "amountCents": 2500
+        }
+      ],
+      "hint": {
+        "type": "Expense (Purchase)",
+        "account": "Plants and Soil (66)",
+        "paidFrom": "Mastercard (41), Credit Card"
+      }
+    },
+    {
+      "file": "bills/pinnacle-office-supplies-receipt.jpg",
+      "kind": "raster-receipt",
+      "docType": "receipt",
+      "printedVendor": "PINNACLE OFFICE SUPPLIES",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Pinnacle Office Supplies",
+        "vendorId": "63"
+      },
+      "referenceNumber": "PN-2026-4419",
+      "txnDate": "2026-07-20",
+      "dueDate": null,
+      "terms": null,
+      "subtotalCents": 26171,
+      "taxCents": 2257,
+      "totalCents": 28428,
+      "lineCount": 5,
+      "lines": [
+        {
+          "desc": "COPY PAPER 8.5X11 10RM CASE",
+          "qty": 2,
+          "unitCents": 4699,
+          "amountCents": 9398
+        },
+        {
+          "desc": "TONER CARTRIDGE HP 26A BLK",
+          "qty": 1,
+          "unitCents": 8999,
+          "amountCents": 8999
+        },
+        {
+          "desc": "FILE FOLDERS LETTER 100CT",
+          "qty": 3,
+          "unitCents": 1749,
+          "amountCents": 5247
+        },
+        {
+          "desc": "PENS BLACK 12PK",
+          "qty": 2,
+          "unitCents": 699,
+          "amountCents": 1398
+        },
+        {
+          "desc": "STICKY NOTES 3X3 12PK",
+          "qty": 1,
+          "unitCents": 1129,
+          "amountCents": 1129
+        }
+      ],
+      "hint": {
+        "type": "Expense (Purchase)",
+        "account": "Office Expenses (15)",
+        "paidFrom": "Checking (35), Bank"
+      }
+    },
+    {
+      "file": "bills/brightline-electric-supply-scan-BE-5731.pdf",
+      "kind": "image-pdf",
+      "docType": "invoice",
+      "printedVendor": "Brightline Electric Supply",
+      "expectedMatch": {
+        "type": "exact",
+        "vendorDisplayName": "Brightline Electric Supply",
+        "vendorId": "59"
+      },
+      "referenceNumber": "BE-5731",
+      "txnDate": "2026-07-24",
+      "dueDate": "2026-08-23",
+      "terms": "Net 30",
+      "subtotalCents": 73755,
+      "taxCents": 6361,
+      "totalCents": 80116,
+      "lineCount": 4,
+      "lines": [
+        {
+          "desc": "200A Meter Socket, ringless",
+          "qty": 1,
+          "unitCents": 21400,
+          "amountCents": 21400
+        },
+        {
+          "desc": "2 in. EMT Conduit, 10 ft length",
+          "qty": 12,
+          "unitCents": 2735,
+          "amountCents": 32820
+        },
+        {
+          "desc": "1 in. EMT Compression Connector",
+          "qty": 25,
+          "unitCents": 415,
+          "amountCents": 10375
+        },
+        {
+          "desc": "Ground Rod, 8 ft copper clad",
+          "qty": 4,
+          "unitCents": 2290,
+          "amountCents": 9160
+        }
+      ],
+      "hint": {
+        "type": "Bill",
+        "account": "Job Materials (63)",
+        "paidFrom": null
+      }
+    }
+  ],
+  "sandbox": {
+    "vendorsSeeded": [
+      {
+        "DisplayName": "Apex Plumbing Supply",
+        "Id": "58",
+        "action": "created"
+      },
+      {
+        "DisplayName": "Brightline Electric Supply",
+        "Id": "59",
+        "action": "created"
+      },
+      {
+        "DisplayName": "Metro Fuel Oil Corp",
+        "Id": "60",
+        "action": "created"
+      },
+      {
+        "DisplayName": "Cedar Lane Landscaping Supply",
+        "Id": "61",
+        "action": "created"
+      },
+      {
+        "DisplayName": "Northside Auto Parts",
+        "Id": "62",
+        "action": "created"
+      },
+      {
+        "DisplayName": "Pinnacle Office Supplies",
+        "Id": "63",
+        "action": "created"
+      }
+    ],
+    "bankAccounts": [
+      {
+        "Id": "35",
+        "Name": "Checking",
+        "AccountType": "Bank",
+        "AccountSubType": "Checking",
+        "Active": true
+      },
+      {
+        "Id": "36",
+        "Name": "Savings",
+        "AccountType": "Bank",
+        "AccountSubType": "Savings",
+        "Active": true
+      }
+    ],
+    "creditCardAccounts": [
+      {
+        "Id": "41",
+        "Name": "Mastercard",
+        "AccountType": "Credit Card",
+        "AccountSubType": "CreditCard",
+        "Active": true
+      },
+      {
+        "Id": "42",
+        "Name": "Visa",
+        "AccountType": "Credit Card",
+        "AccountSubType": "CreditCard",
+        "Active": true
+      }
+    ],
+    "expenseAccounts": [
+      {
+        "Id": "69",
+        "Name": "Accounting",
+        "AccountType": "Expense",
+        "AccountSubType": "LegalProfessionalFees",
+        "Active": true
+      },
+      {
+        "Id": "7",
+        "Name": "Advertising",
+        "AccountType": "Expense",
+        "AccountSubType": "AdvertisingPromotional",
+        "Active": true
+      },
+      {
+        "Id": "55",
+        "Name": "Automobile",
+        "AccountType": "Expense",
+        "AccountSubType": "Auto",
+        "Active": true
+      },
+      {
+        "Id": "8",
+        "Name": "Bank Charges",
+        "AccountType": "Expense",
+        "AccountSubType": "BankCharges",
+        "Active": true
+      },
+      {
+        "Id": "70",
+        "Name": "Bookkeeper",
+        "AccountType": "Expense",
+        "AccountSubType": "LegalProfessionalFees",
+        "Active": true
+      },
+      {
+        "Id": "73",
+        "Name": "Building Repairs",
+        "AccountType": "Expense",
+        "AccountSubType": "RepairMaintenance",
+        "Active": true
+      },
+      {
+        "Id": "9",
+        "Name": "Commissions & fees",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "74",
+        "Name": "Computer Repairs",
+        "AccountType": "Expense",
+        "AccountSubType": "RepairMaintenance",
+        "Active": true
+      },
+      {
+        "Id": "59",
+        "Name": "Cost of Labor",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "64",
+        "Name": "Decks and Patios",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "28",
+        "Name": "Disposal Fees",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "10",
+        "Name": "Dues & Subscriptions",
+        "AccountType": "Expense",
+        "AccountSubType": "DuesSubscriptions",
+        "Active": true
+      },
+      {
+        "Id": "62",
+        "Name": "Equipment Rental",
+        "AccountType": "Expense",
+        "AccountSubType": "EquipmentRental",
+        "Active": true
+      },
+      {
+        "Id": "29",
+        "Name": "Equipment Rental",
+        "AccountType": "Expense",
+        "AccountSubType": "EquipmentRental",
+        "Active": true
+      },
+      {
+        "Id": "75",
+        "Name": "Equipment Repairs",
+        "AccountType": "Expense",
+        "AccountSubType": "RepairMaintenance",
+        "Active": true
+      },
+      {
+        "Id": "65",
+        "Name": "Fountain and Garden Lighting",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "56",
+        "Name": "Fuel",
+        "AccountType": "Expense",
+        "AccountSubType": "Auto",
+        "Active": true
+      },
+      {
+        "Id": "76",
+        "Name": "Gas and Electric",
+        "AccountType": "Expense",
+        "AccountSubType": "Utilities",
+        "Active": true
+      },
+      {
+        "Id": "60",
+        "Name": "Installation",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "11",
+        "Name": "Insurance",
+        "AccountType": "Expense",
+        "AccountSubType": "Insurance",
+        "Active": true
+      },
+      {
+        "Id": "58",
+        "Name": "Job Expenses",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "63",
+        "Name": "Job Materials",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "71",
+        "Name": "Lawyer",
+        "AccountType": "Expense",
+        "AccountSubType": "LegalProfessionalFees",
+        "Active": true
+      },
+      {
+        "Id": "12",
+        "Name": "Legal & Professional Fees",
+        "AccountType": "Expense",
+        "AccountSubType": "LegalProfessionalFees",
+        "Active": true
+      },
+      {
+        "Id": "72",
+        "Name": "Maintenance and Repair",
+        "AccountType": "Expense",
+        "AccountSubType": "RepairMaintenance",
+        "Active": true
+      },
+      {
+        "Id": "61",
+        "Name": "Maintenance and Repairs",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "13",
+        "Name": "Meals and Entertainment",
+        "AccountType": "Expense",
+        "AccountSubType": "EntertainmentMeals",
+        "Active": true
+      },
+      {
+        "Id": "15",
+        "Name": "Office Expenses",
+        "AccountType": "Expense",
+        "AccountSubType": "OfficeGeneralAdministrativeExpenses",
+        "Active": true
+      },
+      {
+        "Id": "68",
+        "Name": "Permits",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "66",
+        "Name": "Plants and Soil",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "16",
+        "Name": "Promotional",
+        "AccountType": "Expense",
+        "AccountSubType": "AdvertisingPromotional",
+        "Active": true
+      },
+      {
+        "Id": "78",
+        "Name": "Purchases",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "17",
+        "Name": "Rent or Lease",
+        "AccountType": "Expense",
+        "AccountSubType": "RentOrLeaseOfBuildings",
+        "Active": true
+      },
+      {
+        "Id": "67",
+        "Name": "Sprinklers and Drip Systems",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "19",
+        "Name": "Stationery & Printing",
+        "AccountType": "Expense",
+        "AccountSubType": "OfficeGeneralAdministrativeExpenses",
+        "Active": true
+      },
+      {
+        "Id": "20",
+        "Name": "Supplies",
+        "AccountType": "Expense",
+        "AccountSubType": "SuppliesMaterials",
+        "Active": true
+      },
+      {
+        "Id": "21",
+        "Name": "Taxes & Licenses",
+        "AccountType": "Expense",
+        "AccountSubType": "TaxesPaid",
+        "Active": true
+      },
+      {
+        "Id": "77",
+        "Name": "Telephone",
+        "AccountType": "Expense",
+        "AccountSubType": "Utilities",
+        "Active": true
+      },
+      {
+        "Id": "22",
+        "Name": "Travel",
+        "AccountType": "Expense",
+        "AccountSubType": "Travel",
+        "Active": true
+      },
+      {
+        "Id": "23",
+        "Name": "Travel Meals",
+        "AccountType": "Expense",
+        "AccountSubType": "TravelMeals",
+        "Active": true
+      },
+      {
+        "Id": "88",
+        "Name": "Unapplied Cash Bill Payment Expense",
+        "AccountType": "Expense",
+        "AccountSubType": "UnappliedCashBillPaymentExpense",
+        "Active": true
+      },
+      {
+        "Id": "31",
+        "Name": "Uncategorized Expense",
+        "AccountType": "Expense",
+        "AccountSubType": "OtherMiscellaneousServiceCost",
+        "Active": true
+      },
+      {
+        "Id": "24",
+        "Name": "Utilities",
+        "AccountType": "Expense",
+        "AccountSubType": "Utilities",
+        "Active": true
+      },
+      {
+        "Id": "57",
+        "Name": "Workers Compensation",
+        "AccountType": "Expense",
+        "AccountSubType": "Insurance",
+        "Active": true
+      }
+    ]
+  }
+}
