@@ -17,17 +17,87 @@
 // artwork, so it renders as overlapping logos at any size. The PNG is the flattened, correct
 // lockup. See the quick-task summary for the render evidence.
 
+import { useEffect, useState } from 'react'
+
 import { Circle } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import logoUrl from '@/assets/nicolebooks-logo-full.png'
+import type { QboStatus } from '@shared/ipc-contract'
 
 // Intrinsic size of the lockup, declared so the browser reserves the right box before the
 // image decodes and the 56px row never reflows.
 const LOGO_INTRINSIC_WIDTH = 1931
 const LOGO_INTRINSIC_HEIGHT = 639
 
-export function Header(): React.JSX.Element {
+/**
+ * What the connection slot says, and how loudly.
+ *
+ * Pure and exported, so the wording is provable without a DOM.
+ *
+ * THE BUG THIS REPLACES. The slot was a Phase 1 placeholder that read "Not connected" always, and
+ * nothing ever replaced it. The live drill screenshotted the app posting eight entries into a
+ * QuickBooks company with "Not connected" sitting in the top right of the same window. For a
+ * non-technical user that is worse than no indicator: the one always-visible piece of status in the
+ * app was contradicting what the app was doing.
+ *
+ * The company NAME is the useful fact when connected, because the thing a person needs to be sure
+ * of before sending money entries is WHICH set of books they are about to touch.
+ *
+ * 'expired' says "Reconnect needed" rather than "Not connected", matching the Settings card: the
+ * fix is one click on a button that reopens the same consent screen, and telling somebody their
+ * setup is gone would invite them to start over.
+ */
+export function connectionLabel(status: QboStatus | null): string {
+  if (status === null) return 'Checking QuickBooks'
+  if (status.state === 'connected') return status.companyName ?? 'Connected to QuickBooks'
+  if (status.state === 'expired') return 'Reconnect needed'
+  return 'Not connected'
+}
+
+/** The dot's colour, from semantic tokens only. Neutral while the answer is still unknown. */
+export function connectionTone(status: QboStatus | null): string {
+  if (status === null) return 'text-header-foreground/40'
+  if (status.state === 'connected') return 'text-success'
+  if (status.state === 'expired') return 'text-destructive'
+  return 'text-header-foreground/40'
+}
+
+export function Header({ status: injected }: { status?: QboStatus | null } = {}): React.JSX.Element {
+  // null means "not answered yet", which is a third state and not the same as disconnected.
+  const [status, setStatus] = useState<QboStatus | null>(injected ?? null)
+
+  useEffect(() => {
+    // An injected status is a test or a story driving the component; do not fight it with a read.
+    if (injected !== undefined) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await window.api.qbo.status()
+        if (!cancelled) setStatus(next)
+      } catch {
+        // A rejection here means the app cannot answer, which is not the same as disconnected, so
+        // the slot stays in its neutral checking state rather than asserting something false.
+        if (!cancelled) setStatus(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [injected])
+
+  // The broadcast, so connecting or disconnecting on the Settings screen updates the header without
+  // a navigation. Same subscribe/dispose shape as theme.onChange.
+  useEffect(() => {
+    if (injected !== undefined) return
+    return window.api.qbo.onStatusChanged(setStatus)
+  }, [injected])
+
+  return <HeaderChrome status={status} />
+}
+
+function HeaderChrome({ status }: { status: QboStatus | null }): React.JSX.Element {
   return (
     <header className="z-20 col-span-2 row-start-1 flex items-center justify-between rounded-none border-b border-border bg-header px-6 text-header-foreground">
       {/*
@@ -45,13 +115,14 @@ export function Header(): React.JSX.Element {
         className="h-9 w-auto"
       />
 
-      {/* Connection-status slot: neutral filled dot + label on the muted foreground token. */}
+      {/* Connection-status slot: a filled dot whose colour carries the state, plus the label. */}
       <Badge
         variant="outline"
-        className="h-6 gap-1.5 rounded-full border-header-foreground/20 px-2.5 text-sm font-normal text-header-foreground/70"
+        aria-live="polite"
+        className="h-6 max-w-[22rem] gap-1.5 truncate rounded-full border-header-foreground/20 px-2.5 text-sm font-normal text-header-foreground/70"
       >
-        <Circle className="fill-current" aria-hidden="true" />
-        Not connected
+        <Circle className={cn('shrink-0 fill-current', connectionTone(status))} aria-hidden="true" />
+        {connectionLabel(status)}
       </Badge>
     </header>
   )
