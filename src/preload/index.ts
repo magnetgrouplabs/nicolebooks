@@ -96,6 +96,9 @@ const api: IpcApi = {
     batchDetail: (batchId) => ipcRenderer.invoke(Channels.postingBatchDetail, { batchId }),
     undoLast: () => ipcRenderer.invoke(Channels.postingUndoLast),
     summary: (batchId) => ipcRenderer.invoke(Channels.postingSummary, { batchId }),
+    // Wrapped into an object before it crosses, exactly like recon.match(fileHashes) and
+    // posting.send(rows): the handler's schema validates the wrapper, not the bare array.
+    checkDuplicates: (probes) => ipcRenderer.invoke(Channels.postingCheckDuplicates, { probes }),
     onProgress: (cb) => {
       const listener = (_event: IpcRendererEvent, progress: PostingProgress): void => cb(progress)
       ipcRenderer.on(Channels.postingProgress, listener)

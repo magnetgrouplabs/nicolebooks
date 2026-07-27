@@ -240,6 +240,28 @@ export const PostingSummarySchema = z.object({
   batchId: z.string().min(1).max(64)
 })
 
+/**
+ * posting:check-duplicates payload (REVIEW-UI).
+ *
+ * The three fields that define "the same bill" plus an opaque rowKey the renderer uses to attach
+ * each answer to the row that asked. Bounds mirror PostingRowSchema deliberately: a probe that
+ * could carry an amount PostingRowSchema would refuse would be checking a row that can never be
+ * sent. An EMPTY probe list is allowed, because a debounced check can legitimately fire with
+ * nothing complete yet, and answering {} is cheaper than making the renderer special-case it.
+ */
+export const PostingCheckDuplicatesSchema = z.object({
+  probes: z
+    .array(
+      z.object({
+        rowKey: z.string().min(1).max(128),
+        vendorId: QboIdSchema,
+        amountCents: z.number().int().positive().max(99999999999),
+        txnDate: IsoDateSchema
+      })
+    )
+    .max(500)
+})
+
 // --- upload + ingestion:pick-files: all payload-free --------------------------
 // pick-files opens the native dialog main-side and the upload server binds main-side, so neither
 // accepts a renderer-supplied path, port, or host. That is the same path-injection guard as

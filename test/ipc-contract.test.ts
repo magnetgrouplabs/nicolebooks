@@ -150,6 +150,8 @@ describe('Channels are stable strings', () => {
       postingBatchDetail: 'posting:batch-detail',
       postingUndoLast: 'posting:undo-last',
       postingSummary: 'posting:summary',
+      // Added by REVIEW-UI (finish sprint): the review screen's prior-entry warning.
+      postingCheckDuplicates: 'posting:check-duplicates',
       ingestionPickFiles: 'ingestion:pick-files',
       uploadStart: 'upload:start',
       uploadStop: 'upload:stop',

@@ -85,9 +85,13 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
       'syncReference'
     ])
     expect(apiShape.recon).toEqual(['match'])
+    // checkDuplicates is REVIEW-UI's one added method: a read-only prior-entry lookup for the
+    // review grid. It is named, like every other method here, so the group is still not a
+    // generic invoke.
     expect(apiShape.posting).toEqual([
       'batchDetail',
       'batches',
+      'checkDuplicates',
       'onProgress',
       'send',
       'summary',
