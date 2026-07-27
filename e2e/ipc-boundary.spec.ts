@@ -13,6 +13,10 @@ import { MAIN_ENTRY, _electron as electron } from '../playwright.config'
 //   2. window.api exposes ONLY the named groups (settings, secrets, theme, ingestion, ai, parse)
 //      and, within each, only named methods — never ipcRenderer or a generic invoke.
 //   3. An over-long key rejects at the main handler (Zod bound: key max 128), so the invoke rejects.
+//   4. The Phase 3 parse channels are genuinely INVOCABLE from the renderer, not merely present on
+//      the bridge. Asserting a method exists is what let ingestion:scan ship permanently-rejecting
+//      for a whole phase (quick task 260727-fb9), so parse:parse-batch is actually called here and
+//      its Zod bound is actually tripped.
 
 test('the renderer is isolated: no Node reach, only window.api, malformed payloads reject', async () => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'nb-e2e-ipc-'))
@@ -66,6 +70,50 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
       }
     })
     expect(rejected).toBe(true)
+
+    // 4. The parse channels actually work end to end across the boundary (plan 03-07). An empty
+    //    batch is the cheapest honest invocation: the handler is registered, the payload schema
+    //    accepts the real call, and the pipeline returns its zero summary without touching the
+    //    inbox or the model.
+    const parseBatchResult = await window.evaluate(async () => {
+      try {
+        return { ok: true as const, value: await window.api.parse.parseBatch([]) }
+      } catch (error) {
+        return { ok: false as const, message: String(error) }
+      }
+    })
+    expect(parseBatchResult.ok).toBe(true)
+    expect(parseBatchResult.ok && parseBatchResult.value).toEqual({
+      files: [],
+      summary: { total: 0, parsed: 0, failed: 0, cached: 0 }
+    })
+
+    // ...and the Zod bounds on those channels really gate: a hash that is not 64 hex chars can
+    // never become a parsed_results key, and a bad reparse hash never reaches the filesystem.
+    const parseRejections = await window.evaluate(async () => {
+      const rejects = async (run: () => Promise<unknown>): Promise<boolean> => {
+        try {
+          await run()
+          return false
+        } catch {
+          return true
+        }
+      }
+      return {
+        shortHash: await rejects(() =>
+          window.api.parse.parseBatch([
+            { filename: 'bill.pdf', hash: 'too-short', batchEntryDate: '2026-07-27' }
+          ])
+        ),
+        badReparse: await rejects(() => window.api.parse.reparse('not-a-sha256'))
+      }
+    })
+    expect(parseRejections.shortHash).toBe(true)
+    expect(parseRejections.badReparse).toBe(true)
+
+    // The progress subscription hands back a disposer, exactly like theme.onChange.
+    const disposerType = await window.evaluate(() => typeof window.api.parse.onProgress(() => {}))
+    expect(disposerType).toBe('function')
   } finally {
     await app.close()
   }
