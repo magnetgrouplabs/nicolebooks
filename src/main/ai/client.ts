@@ -6,8 +6,13 @@
 // SECRET BOUNDARY (threat T-03-01): this module is the ONLY place the API key and the base URL
 // are read, and it runs exclusively in the main process. Neither value is returned to a caller,
 // put in an error message, or logged — the errors below are opaque codes that src/main/ipc/ai.ts
-// maps to plain, recoverable user copy. There is no getter here that hands a credential back, so
-// a compromised renderer has nothing to call.
+// maps to plain, recoverable user copy. There is no getter here that hands a credential back.
+//
+// That is necessary but NOT sufficient on its own, and the distinction is worth stating because
+// it was originally missed: D-05 stores both credentials through the GENERIC `secrets` channel,
+// whose getter would otherwise return either of them to the renderer on request. The read-back
+// control lives in src/main/ipc/secrets.ts, whose RENDERER_UNREADABLE deny-list names the two
+// constants below. Any new credential added here must be added there in the same change.
 //
 // SSRF / key-exfiltration guard (threat T-03-05, 03-RESEARCH Security V14): the base URL is
 // user-chosen, so it is validated as a well-formed https: URL with new URL() BEFORE the client

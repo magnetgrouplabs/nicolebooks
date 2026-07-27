@@ -74,3 +74,47 @@ test('secret round trip lands ciphertext in secrets.enc and no plaintext in app.
 
   rmSync(userDataDir, { recursive: true, force: true })
 })
+
+// CR-04, from outside the app. The round trip above is the SC2 control and must keep working for
+// ordinary keys; a live credential is the opposite case. Phase 3 stored the AI key and base URL
+// through this same generic channel, so `window.api.secrets.get('ai-api-key')` handed the
+// decrypted key straight back to renderer JavaScript while three file headers claimed it could
+// not. This asserts the enforced behaviour on the running build: written from the renderer,
+// never readable by it.
+test('the renderer cannot read the AI credentials back through window.api.secrets', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'nb-e2e-aikey-'))
+  const app = await electron.launch({ args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`] })
+
+  try {
+    const window = await app.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+    await window.waitForFunction(() => typeof window.api !== 'undefined')
+
+    const readBack = await window.evaluate(async () => {
+      // Exactly what the Settings screen does when the user saves their credentials.
+      await window.api.secrets.set('ai-api-key', 'sk-E2E-CR04-LIVE-KEY-11d7f3')
+      await window.api.secrets.set('ai-base-url', 'https://e2e-cr04-endpoint.example/v1')
+      return {
+        key: await window.api.secrets.get('ai-api-key'),
+        baseUrl: await window.api.secrets.get('ai-base-url'),
+        // A non-credential key must still round-trip, or the fix broke SC2's proof instead.
+        canary: await (async () => {
+          await window.api.secrets.set('e2e_cr04_canary', 'still-works')
+          return window.api.secrets.get('e2e_cr04_canary')
+        })()
+      }
+    })
+
+    expect(readBack.key).toBeNull()
+    expect(readBack.baseUrl).toBeNull()
+    expect(readBack.canary).toBe('still-works')
+
+    // The Settings health indicator still resolves, so the generic channel is intact.
+    await window.getByRole('button', { name: 'Settings' }).click()
+    await expect(window.getByText('Secret store: OK')).toBeVisible({ timeout: 15_000 })
+  } finally {
+    await app.close()
+  }
+
+  rmSync(userDataDir, { recursive: true, force: true })
+})
