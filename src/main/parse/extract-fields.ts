@@ -488,28 +488,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Should the ladder descend on this error?
  *
- * Yes for a parameter/route rejection (typically 400/404/422, or a TypeError from a client that
- * has no such method) — that is precisely what the ladder exists for. NO for a rejected
- * credential, a rate limit, a server fault or a dead connection: the rung is not the problem, and
- * descending would triple the failed calls for every file in the batch. The SDK has already spent
- * its own maxRetries (3, D-25) on the transient cases before the error reaches here.
+ * Yes for a parameter/route rejection (400/404/422, or a TypeError from a client that has no such
+ * method) — that is precisely what the ladder exists for. NO for anything else: a rejected
+ * credential, an exhausted balance, a rate limit, an oversized payload, a server fault or a dead
+ * connection. In all of those the rung is not the problem, and descending would triple the failed
+ * calls for every file in the batch. The SDK has already spent its own maxRetries (3, D-25) on
+ * the transient cases before the error reaches here.
  */
 function canFallBack(error: unknown): boolean {
   const status = (error as { status?: unknown } | null)?.status
-  if (typeof status === 'number') {
-    if (status >= 500) return false
-    return !NON_FALLBACK_STATUS.has(status)
-  }
+  // An ALLOW-list, matching the documented intent. The deny-list this replaces admitted every
+  // status under 500 that was not explicitly excluded, which meant 402 (Insufficient Credits,
+  // OpenRouter's response to an exhausted balance), 413 (Payload Too Large), 415, 423, 424, 451
+  // and every future 4xx a provider invents each burned three full requests per file plus a
+  // repair re-ask, all failing identically because the rung was never the problem.
+  if (typeof status === 'number') return FALLBACK_STATUS.has(status)
 
   const rawName = (error as { name?: unknown } | null)?.name
   const name = typeof rawName === 'string' ? rawName : ''
   const message = error instanceof Error ? error.message : ''
   if (CONNECTION_ERROR.test(name) || CONNECTION_ERROR.test(message)) return false
+  // No status at all: a TypeError from a client with no `parse` method (a bare gateway wrapper)
+  // still has to descend, which is the case the ladder was written for.
   return true
 }
 
-/** Auth, permission, request-timeout, conflict and rate-limit: never a ladder problem. */
-const NON_FALLBACK_STATUS = new Set([401, 403, 408, 409, 429])
+/**
+ * The ONLY statuses that mean "this endpoint does not support this parameter" (D-25):
+ * 400 invalid parameter, 404 unknown route/model for that mode, 422 unprocessable body.
+ */
+const FALLBACK_STATUS = new Set([400, 404, 422])
 
 const CONNECTION_ERROR = /connection|timed?[ _-]?out|ECONNREFUSED|ENOTFOUND|ECONNRESET|abort/i
 

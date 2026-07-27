@@ -464,6 +464,49 @@ describe('extractFields — structured-output fallback ladder (D-25)', () => {
     expect(client.chatCalls()).toHaveLength(1)
   })
 
+  // WR-04. The implementation was the inverse of the documented rule: descend on ANYTHING under
+  // 500 that was not explicitly excluded. Each admitted status cost three full requests per file
+  // plus a repair re-ask, all failing identically.
+  it('descends ONLY on the documented parameter-rejection statuses', async () => {
+    for (const status of [400, 404, 422]) {
+      const client = makeFakeClient({
+        chatError: Object.assign(new Error('unsupported parameter'), { status })
+      })
+      await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+      expect(client.chatCalls(), `status ${status} should walk the ladder`).toHaveLength(3)
+    }
+  })
+
+  it('does NOT descend on a status that has nothing to do with the rung', async () => {
+    // 402 is OpenRouter's exhausted-balance response; 413 is reachable through a long statement;
+    // 451/423/424 and every future 4xx a provider invents are the same class of non-rung problem.
+    for (const status of [402, 413, 415, 423, 424, 429, 451]) {
+      const client = makeFakeClient({
+        chatError: Object.assign(new Error('not a rung problem'), { status })
+      })
+      const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+      expect(result.ok).toBe(false)
+      expect(client.chatCalls(), `status ${status} should stop at one call`).toHaveLength(1)
+    }
+  })
+
+  it('does NOT descend on a server fault', async () => {
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('upstream is down'), { status: 503 })
+    })
+    await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+    expect(client.chatCalls()).toHaveLength(1)
+  })
+
+  it('still descends for a client that has no such method at all (no status)', async () => {
+    // The original reason the ladder exists: a bare gateway wrapper whose `parse` is undefined
+    // throws a TypeError with no status, and must fall through to `create`.
+    const client = makeFakeClient({ parsedObject: MINIMAL_BILL })
+    delete (client.chat.completions as { parse?: unknown }).parse
+    const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+    expect(result.ok).toBe(true)
+  })
+
   it('returns a failure marker when every rung is unsupported', async () => {
     const client = makeFakeClient({ chatError: unsupported('everything') })
     const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
