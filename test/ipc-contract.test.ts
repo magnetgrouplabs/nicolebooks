@@ -132,7 +132,29 @@ describe('Channels are stable strings', () => {
       // Phase 3 parse channel group (plan 03-01): batch parse + single re-parse + progress broadcast.
       parseBatch: 'parse:parse-batch',
       parseReparse: 'parse:reparse',
-      parseProgress: 'parse:progress'
+      parseProgress: 'parse:progress',
+      // Finish-sprint groups (SEAMS). These names are a FIXED integration contract shared by four
+      // agents working in parallel worktrees, so this pin is the thing that makes a rename LOUD
+      // rather than silent: a channel renamed in one worktree fails here at merge instead of
+      // producing a handler nobody's preload can reach.
+      qboStatus: 'qbo:status',
+      qboConnect: 'qbo:connect',
+      qboDisconnect: 'qbo:disconnect',
+      qboSyncReference: 'qbo:sync-reference',
+      qboGetReference: 'qbo:get-reference',
+      qboStatusChanged: 'qbo:status-changed',
+      reconMatch: 'recon:match',
+      postingSend: 'posting:send',
+      postingProgress: 'posting:progress',
+      postingBatches: 'posting:batches',
+      postingBatchDetail: 'posting:batch-detail',
+      postingUndoLast: 'posting:undo-last',
+      postingSummary: 'posting:summary',
+      ingestionPickFiles: 'ingestion:pick-files',
+      uploadStart: 'upload:start',
+      uploadStop: 'upload:stop',
+      uploadStatus: 'upload:status',
+      uploadReceived: 'upload:received'
     })
   })
 })

@@ -48,16 +48,52 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
       theme: Object.keys(window.api.theme).sort(),
       ingestion: Object.keys(window.api.ingestion).sort(),
       ai: Object.keys(window.api.ai).sort(),
-      parse: Object.keys(window.api.parse).sort()
+      parse: Object.keys(window.api.parse).sort(),
+      qbo: Object.keys(window.api.qbo).sort(),
+      recon: Object.keys(window.api.recon).sort(),
+      posting: Object.keys(window.api.posting).sort(),
+      upload: Object.keys(window.api.upload).sort()
     }))
-    expect(apiShape.top).toEqual(['ai', 'ingestion', 'parse', 'secrets', 'settings', 'theme'])
+    expect(apiShape.top).toEqual([
+      'ai',
+      'ingestion',
+      'parse',
+      'posting',
+      'qbo',
+      'recon',
+      'secrets',
+      'settings',
+      'theme',
+      'upload'
+    ])
     expect(apiShape.settings).toEqual(['get', 'set'])
     expect(apiShape.secrets).toEqual(['delete', 'get', 'set'])
     expect(apiShape.theme).toEqual(['get', 'onChange'])
-    expect(apiShape.ingestion).toEqual(['chooseInbox', 'resolveInbox', 'scan'])
+    expect(apiShape.ingestion).toEqual(['chooseInbox', 'pickFiles', 'resolveInbox', 'scan'])
     // Phase 3 (plan 03-01): the ai + parse groups are named methods only — no generic invoke.
     expect(apiShape.ai).toEqual(['listModels', 'setModel', 'testConnection'])
     expect(apiShape.parse).toEqual(['onProgress', 'parseBatch', 'reparse'])
+    // Finish sprint (SEAMS): the four new groups are likewise named methods only. Handler bodies
+    // land later; the bridge surface is pinned here so a downstream agent cannot widen it into a
+    // generic invoke, and so a group that quietly loses a method fails at merge.
+    expect(apiShape.qbo).toEqual([
+      'connect',
+      'disconnect',
+      'getReference',
+      'onStatusChanged',
+      'status',
+      'syncReference'
+    ])
+    expect(apiShape.recon).toEqual(['match'])
+    expect(apiShape.posting).toEqual([
+      'batchDetail',
+      'batches',
+      'onProgress',
+      'send',
+      'summary',
+      'undoLast'
+    ])
+    expect(apiShape.upload).toEqual(['onReceived', 'start', 'status', 'stop'])
 
     // 3. A malformed payload (key far over the 128-char bound) is rejected by the main handler,
     //    so the invoke rejects in the renderer rather than performing any privileged action.
