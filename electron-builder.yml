@@ -89,8 +89,14 @@ dmg:
   writeUpdateInfo: true
 
 # Public repo: update checks are anonymous, so no token is embedded in the shipped app.
+#
+# releaseType is draft on purpose. A release is what electron-updater reads, so the moment one is
+# published every installed copy of the app can see it. Uploading straight to a published release
+# also means the feed goes live while the second platform in the CI matrix is still uploading, so
+# an updater could momentarily read a half complete release. Draft keeps the artifacts private
+# until a person has looked at them and pressed publish.
 publish:
   provider: github
   owner: magnetgrouplabs
   repo: nicolebooks
-  releaseType: release
+  releaseType: draft

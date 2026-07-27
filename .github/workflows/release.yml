@@ -1,8 +1,12 @@
 name: Release
 
 # Tag-driven release. Pushing a tag like v0.2.0 builds a Windows NSIS installer and macOS
-# dmg + zip artifacts and publishes them, plus the latest.yml / latest-mac.yml feeds that
+# dmg + zip artifacts and uploads them, plus the latest.yml / latest-mac.yml feeds that
 # electron-updater reads, to a GitHub Release on this repository.
+#
+# The release is left as a DRAFT (publish.releaseType in electron-builder.yml). Publishing it is a
+# deliberate human step, because publishing is what makes the feed visible to every installed copy
+# of the app.
 #
 # The repository is public, so the shipped app checks for updates anonymously and no token
 # is embedded in the binary. The only credential used here is the automatic GITHUB_TOKEN,
@@ -23,8 +27,39 @@ permissions:
   contents: write
 
 jobs:
+  # The draft release has to exist BEFORE the matrix starts.
+  #
+  # electron-builder's GitHub publisher looks for a release matching the tag and creates one if it
+  # does not find it. Two matrix jobs starting together both look, both find nothing, and both
+  # create one, and GitHub allows that because a draft release does not own its tag yet. The result
+  # is two releases for one tag with the artifacts split across them, which is exactly what v26.7.1
+  # produced on its first successful build: latest.yml on one and latest-mac.yml on the other, and
+  # a zip on one with its blockmap on the other.
+  #
+  # Creating the draft here, in a single job the matrix depends on, closes the window: by the time
+  # either builder looks, the release is already there and both attach to it.
+  draft:
+    name: create the draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft release if it does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists, leaving it alone"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --title "${TAG#v}" \
+              --notes "Installers for ${TAG#v}. Windows: NicoleBooks-Setup-${TAG#v}.exe. Mac: the arm64 dmg for Apple Silicon, the plain dmg for Intel."
+          fi
+
   release:
     name: build and publish (${{ matrix.os }})
+    needs: draft
     runs-on: ${{ matrix.os }}
     strategy:
       # One platform failing must not cancel the other: a partial release is easier to
