@@ -296,6 +296,53 @@ describe('validateBill — coercion into ParsedFields', () => {
     })
   })
 
+  // Found by the live drill: one of the nine fixtures came back with suggested_category set to the
+  // four-character string "null", which SQLite stored as text, the review row displayed as a
+  // category, and reconciliation ranked against the chart of accounts.
+  //
+  // On a category that is cosmetic. On invoice_number it is not: that value becomes the QuickBooks
+  // DocNumber, so an uncaught "N/A" files a bill under the reference number "N/A" in somebody's
+  // books, permanently, on a field that looks filled in.
+  describe('a model that writes the word instead of the absence', () => {
+    it.each([
+      'null',
+      'NULL',
+      ' null ',
+      'nil',
+      'none',
+      'None',
+      '(none)',
+      'N/A',
+      'n/a',
+      'NA',
+      'not applicable',
+      'Not Available',
+      'unknown',
+      'Undefined',
+      'not specified'
+    ])('reads %s as an absence, not as a value', (word) => {
+      const { fields } = validateBill(
+        bill({ invoice_number: word, suggested_category: word, currency: word, total: '108.00' })
+      )
+      expect(fields.invoiceNumber).toBeNull()
+      expect(fields.suggestedCategory).toBeNull()
+      expect(fields.currency).toBeNull()
+    })
+
+    // The words only mean absence when they are the WHOLE value. A real supplier or reference can
+    // legitimately contain them, and blanking those would lose data the document actually carried.
+    it.each(['Nullarbor Supplies', 'NA-1042', 'None Such Trading Co', 'UNKNOWN-BATCH-7'])(
+      'keeps %s, because the word is part of a real value',
+      (value) => {
+        const { fields } = validateBill(
+          bill({ invoice_number: value, suggested_category: value, total: '108.00' })
+        )
+        expect(fields.invoiceNumber).toBe(value)
+        expect(fields.suggestedCategory).toBe(value)
+      }
+    )
+  })
+
   it('flags an unparseable date, keeps the rest of the bill, and never throws', () => {
     const run = (): ReturnType<typeof validateBill> =>
       validateBill(bill({ invoice_date: 'sometime last week', total: '108.00' }))
