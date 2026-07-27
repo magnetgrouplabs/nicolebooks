@@ -35,6 +35,18 @@ import { migration0002 } from '../src/main/db/migrations/0002_dedupe'
 
 let dir: string
 let dbPath: string
+const opened: Database.Database[] = []
+
+/**
+ * Open a handle on the temp file and register it for teardown. Windows will not unlink a file
+ * that still has an open handle, so a failed assertion before an explicit close() used to
+ * cascade into a second, misleading EBUSY failure from the afterEach rmSync.
+ */
+function openDb(): Database.Database {
+  const db = new Database(dbPath)
+  opened.push(db)
+  return db
+}
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'nb-migrate-'))
@@ -42,6 +54,13 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  for (const db of opened.splice(0)) {
+    try {
+      db.close()
+    } catch {
+      /* already closed by the test body */
+    }
+  }
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -77,7 +96,7 @@ const PARSED_RESULTS_COLUMNS = [
 
 describe('migrate()', () => {
   it('advances user_version from 0 to 3 on a fresh database', () => {
-    const db = new Database(dbPath)
+    const db = openDb()
     expect(db.pragma('user_version', { simple: true })).toBe(0)
     migrate(db)
     // migration0001 (app_settings) + migration0002 (posted_file_hashes) +
@@ -87,7 +106,7 @@ describe('migrate()', () => {
   })
 
   it('creates the app_settings table with key and value columns', () => {
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     const cols = columnNames(db, 'app_settings')
     expect(cols).toContain('key')
@@ -96,7 +115,7 @@ describe('migrate()', () => {
   })
 
   it('is idempotent: a second migrate() is a no-op and does not throw', () => {
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     expect(() => migrate(db)).not.toThrow()
     expect(db.pragma('user_version', { simple: true })).toBe(3)
@@ -108,7 +127,7 @@ describe('migrate()', () => {
     // app_settings (migration0001); Phase 2 owns the dedupe ledger posted_file_hashes
     // (migration0002); Phase 3 owns the parsed-results cache (migration0003, D-17/D-24).
     // Order is by creation (migration version order).
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -122,7 +141,7 @@ describe('migrate()', () => {
   })
 
   it('creates posted_file_hashes with the dedupe-ledger columns (migration0002)', () => {
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     const cols = columnNames(db, 'posted_file_hashes')
     expect(cols).toEqual(['hash', 'posted_at', 'original_filename', 'qbo_entity', 'qbo_id'])
@@ -130,7 +149,7 @@ describe('migrate()', () => {
   })
 
   it('creates parsed_results with exactly the D-24 columns plus the D-21 truncated flag (migration0003)', () => {
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     expect(columnNames(db, 'parsed_results')).toEqual(PARSED_RESULTS_COLUMNS)
     db.close()
@@ -141,7 +160,7 @@ describe('migrate()', () => {
     // uniqueness constraint and the O(log n) lookup, the same idiom as posted_file_hashes.hash.
     // Money is INTEGER cents (RESEARCH Pitfall 4 — a REAL column would lose cents), the JSON
     // blobs are TEXT (5a-A), and the D-21 truncated flag is an INTEGER 0/1.
-    const db = new Database(dbPath)
+    const db = openDb()
     migrate(db)
     const info = db.prepare('PRAGMA table_info(parsed_results)').all() as Array<{
       name: string
@@ -175,15 +194,24 @@ describe('migrate()', () => {
   })
 
   it('declares parsed_results STRICT with no BOOLEAN column (RESEARCH Pitfall 8)', () => {
-    // STRICT tables accept only INTEGER/REAL/TEXT/BLOB/ANY. A BOOLEAN-typed column would make
-    // the CREATE TABLE itself fail, so this asserts the intent stays visible in the DDL.
-    const db = new Database(dbPath)
+    // STRICT tables accept only INTEGER/REAL/TEXT/BLOB/ANY, so a BOOLEAN-typed column would
+    // make the CREATE TABLE itself fail. Assert against the DECLARED types from table_info
+    // rather than the DDL text — sqlite_master.sql keeps the source comments, and the DDL
+    // comments legitimately mention the word this rule is about.
+    const db = openDb()
     migrate(db)
     const row = db
       .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'parsed_results'")
       .get() as { sql: string }
-    expect(row.sql).toMatch(/STRICT/)
-    expect(row.sql).not.toMatch(/BOOLEAN/i)
+    expect(row.sql).toMatch(/\)\s*STRICT\s*$/)
+
+    const types = (
+      db.prepare('PRAGMA table_info(parsed_results)').all() as Array<{ type: string }>
+    ).map((c) => c.type.toUpperCase())
+    expect(types).not.toContain('BOOLEAN')
+    for (const type of types) {
+      expect(['INTEGER', 'REAL', 'TEXT', 'BLOB', 'ANY']).toContain(type)
+    }
     db.close()
   })
 
@@ -191,7 +219,7 @@ describe('migrate()', () => {
     // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
     // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply ONLY
     // migration0003 (forward-only ratchet) and leave the existing rows untouched.
-    const first = new Database(dbPath)
+    const first = openDb()
     try {
       migration0001.up(first)
       migration0002.up(first)
@@ -208,7 +236,7 @@ describe('migrate()', () => {
       first.close()
     }
 
-    const second = new Database(dbPath)
+    const second = openDb()
     try {
       expect(second.pragma('user_version', { simple: true })).toBe(2)
       expect(() => migrate(second)).not.toThrow()
@@ -228,14 +256,14 @@ describe('migrate()', () => {
   })
 
   it('persists an app_settings value across a close and reopen of the same file', () => {
-    const first = new Database(dbPath)
+    const first = openDb()
     migrate(first)
     first
       .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)')
       .run('last-folder', '/bills/2026-07')
     first.close()
 
-    const second = new Database(dbPath)
+    const second = openDb()
     // Re-running migrate on the reopened file must remain a no-op (already at version 3).
     migrate(second)
     const row = second.prepare('SELECT value FROM app_settings WHERE key = ?').get('last-folder') as
