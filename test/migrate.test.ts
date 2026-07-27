@@ -283,17 +283,10 @@ describe('migrate()', () => {
     db.close()
   })
 
-<<<<<<< HEAD
-  it('upgrades an existing database already at user_version 2 forward to 4 without data loss', () => {
-    // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
-    // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply the
-    // pending migrations in order (forward-only ratchet) and leave the existing rows untouched.
-=======
   it('upgrades an existing database already at user_version 2 forward without data loss', () => {
     // The real upgrade path for an installed copy: Phases 1-2 already ran, so app_settings and
     // posted_file_hashes exist with live rows and user_version is 2. migrate() must apply every
     // migration ABOVE 2 (forward-only ratchet) and leave the existing rows untouched.
->>>>>>> worktree-agent-afedfec54831a4be4
     const first = openDb()
     try {
       migration0001.up(first)
@@ -315,11 +308,7 @@ describe('migrate()', () => {
     try {
       expect(second.pragma('user_version', { simple: true })).toBe(2)
       expect(() => migrate(second)).not.toThrow()
-<<<<<<< HEAD
-      expect(second.pragma('user_version', { simple: true })).toBe(4)
-=======
       expect(second.pragma('user_version', { simple: true })).toBe(LATEST_VERSION)
->>>>>>> worktree-agent-afedfec54831a4be4
       expect(columnNames(second, 'parsed_results')).toEqual(PARSED_RESULTS_COLUMNS)
 
       // Pre-existing data survived the upgrade.

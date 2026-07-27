@@ -57,7 +57,16 @@ vi.mock('electron', () => ({
   // dialog at module load. Neither is exercised here (test/upload-ipc.test.ts drives both).
   // qbo.ts injects shell.openExternal into the OAuth flow. Never invoked here, because the service
   // layer below is mocked, but the export has to exist or the mock throws on the reference.
-  app: { on: (): void => {}, getPath: (): string => '', isPackaged: false },
+  // getPath THROWS so this spec genuinely has no database behind it: a '' return would let
+  // getDatabase() open ./app.db in the cwd and quietly hand the posting handlers a working store,
+  // inverting the landed-handler failure-path assertions below.
+  app: {
+    on: (): void => {},
+    getPath: (): never => {
+      throw new Error('no userData in this spec')
+    },
+    isPackaged: false
+  },
   dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
   shell: { openExternal: async (): Promise<void> => {} }
 }))
