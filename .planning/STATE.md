@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-07-27T14:17:13.844Z"
+stopped_at: Completed quick task 260727-fb9 (ingestion:scan fix)
+last_updated: "2026-07-27T15:16:00.000Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
@@ -119,6 +119,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Parse cache (03-06): the SCHEMA_VERSION staleness gate lives inside getCached, so a row produced under a retired prompt/schema contract can never be served by a call site that forgot to check; the row is kept on disk for audit, not deleted (D-24).
 - [Phase 03]: Parse cache (03-06): parsed_results is keyed on file_hash ALONE with ON CONFLICT(file_hash) upsert — storing a different model updates the one row (proven by COUNT(*)=1 across a model switch), because keying on hash+model would silently re-parse and re-charge the entire history the first time the user changed models (D-14/Pitfall 7).
 - [Phase 03]: Parse cache (03-06): putCached takes the raw base URL and stores only new URL().host, so a gateway URL carrying the key in userinfo or a query string cannot reach SQLite; money is bound as-is with no rounding fallback (a silent auto-correct is what D-12 forbids), and a corrupt JSON blob degrades to {}/[] rather than aborting a batch.
+- [Quick 260727-fb9]: payload-free IPC handlers normalize before the strict-empty parse (`parse(raw ?? {})`) — the gate stays a real path-injection guard because a non-empty payload still throws before any privileged work, while the genuine no-arg preload call is accepted. ingestion:scan was the last mis-shaped site; the six surviving bare `Schema.parse(raw)` calls all belong to handlers whose preload method sends an argument.
+- [Quick 260727-fb9]: a bridge-shape assertion is not a proof of function — e2e/ipc-boundary.spec.ts asserted `scan` existed on window.api, which a permanently-rejecting handler passed for a whole phase. Security gates whose reject half is unreachable from the renderer (the preload discards arguments) are pinned at the main-process handler instead, with the resolve half proven by an e2e that actually invokes the channel.
 
 ### Pending Todos
 
@@ -130,7 +132,14 @@ None yet.
 - Phase 4 (QuickBooks Connection) is gated on Anthony providing QuickBooks sandbox client id, client secret, and redirect URI. Sandbox credentials are available immediately; production credentials come later at Phase 8.
 - Phase 8 packaging depends on code-signing certificates with real lead time (Apple Developer Program enrollment, Windows HSM or cloud code-signing). Start procurement early, well before Phase 8 opens.
 - OAuth token-lifecycle facts changed in November 2025 (60-minute access tokens, roughly 24-hour refresh-token rotation, 5-year cap, mandatory Reconnect URL by Feb 24, 2026). Re-verify against Intuit's live docs at Phase 4 planning time.
-- APP-BREAKING (Phase 2 regression, found during 03-02): ingestion:scan always rejects. src/main/ipc/ingestion.ts:41 runs ScanRequestSchema.parse(raw) but the preload invokes with no argument, so raw is undefined and the strict-empty Zod parse throws 'expected object, received undefined'. Confirmed on the running app — the Bills 'Scan now' button can never succeed. One-character fix: parse(raw ?? {}). No unit or e2e spec invokes window.api.ingestion.scan(), which is why Phase 2 shipped green. Not fixed in 03-02 (out of scope: another phase's file). See deferred-items.md item 2. Recommend a /gsd:quick fix before the Phase 3 human gate.
+- RESOLVED 2026-07-27 (was APP-BREAKING): ingestion:scan always rejected (Phase 2 regression found during 03-02). Fixed by quick task 260727-fb9 — src/main/ipc/ingestion.ts now runs ScanRequestSchema.parse(raw ?? {}), and the coverage hole is closed at two layers (test/ingestion-ipc-scan.test.ts pins the reject half at the handler; e2e/ingestion-scan.spec.ts actually invokes window.api.ingestion.scan() and clicks Scan now). Reverting the fix turns both red. Phase 3 deferred-items.md item 2 is CLOSED.
+- STANDING for 03-07: the parse IPC handlers do not exist yet. Any payload-free handler among them must Zod-parse `raw ?? {}`, never a bare `raw` — the preload invokes payload-free channels with no argument, so a strict-empty schema on bare `raw` always throws.
+
+## Quick Tasks Completed
+
+| ID | Date | Task | Outcome |
+|----|------|------|---------|
+| 260727-fb9 | 2026-07-27 | Fix ingestion:scan strict-empty payload rejection + regression coverage | `parse(raw ?? {})` in src/main/ipc/ingestion.ts; new test/ingestion-ipc-scan.test.ts (5 cases) and e2e/ingestion-scan.spec.ts (invocation + UI proof). ING-01/ING-02 now genuinely functional. Commits 8aaddb0, fdf9eaf, 6c26cc0. |
 
 ## Deferred Items
 
@@ -142,6 +151,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T14:17:13.839Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-07-27T15:16:00.000Z
+Stopped at: Completed quick task 260727-fb9 (ingestion:scan fix). Next: 03-07-PLAN.md
 Resume file: None
