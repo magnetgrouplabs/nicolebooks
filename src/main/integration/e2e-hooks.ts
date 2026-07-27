@@ -28,16 +28,33 @@
 import { app } from 'electron'
 import type { QboEntityName } from '../posting/entity-builders'
 import { resolveQboApi } from '../posting/qbo-api'
+import { qboPost } from '../qbo/client'
+import { getRealmId } from '../qbo/connection'
 
 /** The global the drill reaches through app.evaluate. Absent unless both gates below are open. */
 export const E2E_GLOBAL_KEY = '__nicolebooksE2E'
 
-/** Read-only operations the drill is allowed to perform against the connected company. */
+/** Operations the drill is allowed to perform against the connected company. */
 export interface E2EHooks {
   /** Run one SQL-like Accounting API query and return the raw rows. */
   qboQuery(statement: string): Promise<unknown[]>
   /** Read one entity by id. null when QuickBooks no longer has it, which is what undo produces. */
   qboRead(entity: QboEntityName, id: string): Promise<{ id: string; syncToken: string } | null>
+  /**
+   * Rename a vendor out of the way, so the drill's documented fixture state can be restored.
+   *
+   * THE ONE WRITE HERE, and it exists because QuickBooks cannot delete a vendor. The corpus is built
+   * around "Quality Craft Tools LLC" being absent from the company: that absence is what proves the
+   * app never invents a supplier. The moment a drill runs, the vendor exists, and every later drill
+   * would be testing a company whose fixture state had been consumed by the previous one. A
+   * deactivated name still collides, so parking (renaming with a timestamp suffix) is the only way
+   * back to the documented state.
+   *
+   * Deliberately not a general update: it takes a NAME, finds that one vendor, and can only rename
+   * it to a suffixed version of itself. Returns the id it parked, or null when there was nothing to
+   * park.
+   */
+  qboParkVendor(displayName: string): Promise<string | null>
 }
 
 /** True when both gates are open. Exported so a unit spec can pin the gate rather than the effect. */
@@ -52,7 +69,39 @@ export function e2eHooksEnabled(
 export function createE2EHooks(): E2EHooks {
   return {
     qboQuery: async (statement) => (await resolveQboApi()).query(statement),
-    qboRead: async (entity, id) => (await resolveQboApi()).readEntity(entity, id)
+    qboRead: async (entity, id) => (await resolveQboApi()).readEntity(entity, id),
+    qboParkVendor: async (displayName) => {
+      const realmId = getRealmId()
+      if (!realmId) return null
+      const api = await resolveQboApi()
+      // LIKE, not equality. A record parked by an EARLIER drill kept the fixture name inside its
+      // new one, and reconciliation matched the document straight back to it: freeing the exact
+      // string is not enough, every name that still CONTAINS it has to go.
+      const escaped = displayName.replace(/'/g, "''")
+      const found = (await api.query(
+        `SELECT * FROM Vendor WHERE DisplayName LIKE '%${escaped}%'`
+      )) as Array<{ Id?: string; SyncToken?: string }>
+      const vendor = found[0]
+      if (!vendor?.Id || !vendor.SyncToken) return null
+      // A sparse update: only the fields named are changed, and SyncToken is the concurrency check.
+      //
+      // TWO THINGS THE PARKED NAME MUST NOT DO, both learned the hard way against the live sandbox:
+      //
+      //   1. CARRY A COLON. QuickBooks reserves ':' in a DisplayName as the name hierarchy
+      //      separator and rejects the whole update, so an ISO timestamp cannot go in verbatim.
+      //   2. CONTAIN THE ORIGINAL NAME. Reconciliation matched "Quality Craft Tools LLC" straight
+      //      back to "Quality Craft Tools LLC (parked ...)", which is correct behaviour by the
+      //      matcher and completely defeats the point of parking. The parked name therefore shares
+      //      no words with what it replaced.
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      await qboPost(realmId, 'vendor', {
+        Id: vendor.Id,
+        SyncToken: vendor.SyncToken,
+        DisplayName: `ZZ Retired Drill Record ${stamp}`,
+        sparse: true
+      })
+      return vendor.Id
+    }
   }
 }
 
