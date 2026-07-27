@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md (D-20 routing gate, PDF text/render, photo prep); Wave 2 plans 03-05 and 03-06 remain unblocked
-last_updated: "2026-07-27T13:43:45.351Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-07-27T14:02:11.035Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 18
-  completed_plans: 14
+  completed_plans: 15
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 03 (ai-client-and-parse-pipeline) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
-Progress: [████████░░] 78% (14/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 4/7)
+Progress: [████████░░] 83% (15/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 5/7)
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [████████░░] 78% (14/18 plans complete — Phases 
 | Phase 03 P02 | 15min | 3 tasks | 9 files |
 | Phase 03 P03-03 | 9min | 2 tasks | 4 files |
 | Phase 03 P03-04 | 18min | 2 tasks | 10 files |
+| Phase 03 P05 | 14min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,10 @@ Recent decisions affecting current work:
 - [Phase 03]: Parse (03-04): routing branches on SOURCE TYPE before content — a raw photo goes to prepImage (heic-convert then sharp) while an image-only PDF goes to renderPdfPageImage (pdfjs legacy build + @napi-rs/canvas), because sharp cannot decode PDF bytes and collapsing the two image-only cases would make every scanned bill unparseable (D-07/D-19).
 - [Phase 03]: Parse (03-04): the D-20 gate evaluates the two 'this is really a picture' rungs FIRST (bitmap coverage >= 0.75, then invisible-glyph ratio > 0.90) so a bitmap page carrying an OCR overlay never reaches the text rung; char count is a soft tiebreaker that also requires an embedded font, and a malformed signal coerces to 0 so a broken loader degrades toward image-only rather than pairing junk text.
 - [Phase 03]: Parse (03-04): unpdf 1.6.2 renamed configureUnPDF to definePDFJSModule (deprecated, removed in v2) and pdfjs 6 dropped PDFDocumentProxy.destroy() for doc.loadingTask.destroy(); unpdf's renderPageAsImage emits PNG, so the JPEG re-encode uses @napi-rs/canvas rather than sharp to keep the PDF path provably sharp-free.
+- [Phase 03]: 03-05: rung-2/3 prompt schema text is generated from BillSchema via z.toJSONSchema — A hand-written copy would drift from the schema that validates the reply; one source of truth for prompt and gate
+- [Phase 03]: 03-05: an OMITTED optional key normalizes to explicit null before BillSchema runs — BillSchema uses .nullable() (key required) while the prompt invites absence; filling only undefined saves a paid repair call per no-tax-line receipt and cannot weaken vendor/total, which are non-nullable
+- [Phase 03]: 03-05: the D-25 ladder descends on error CLASS, not on any failure — 400/404/422 and method-missing TypeErrors descend; 401/403/408/409/429, 5xx and connection errors return immediately, so a bad key costs one call per file instead of three
+- [Phase 03]: 03-05: the D-21 10-page cap is enforced inside extractFields, not by the caller — The request is assembled here, so no future call site can put an unbounded page count and token bill on the wire; truncated is returned on both result branches
 
 ### Pending Todos
 
@@ -133,6 +138,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T13:43:05.043Z
-Stopped at: Completed 03-04-PLAN.md (D-20 routing gate, PDF text/render, photo prep); Wave 2 plans 03-05 and 03-06 remain unblocked
+Last session: 2026-07-27T14:00:48.620Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None

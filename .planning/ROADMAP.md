@@ -121,7 +121,7 @@ Plans:
 - [x] 03-02-PLAN.md - AI-config vertical slice: key/baseURL in keychain, Connect/Test calls /models once, vision-badged model picker with use-anyway confirm, persisted model (AI-01..04)
 - [x] 03-03-PLAN.md - Deterministic validation gate (money->cents, dates->ISO, subtotal+tax=total) + deterministic-weighted per-field confidence (PARSE-04)
 - [x] 03-04-PLAN.md - Native-vs-scan routing gate (Docling-style), unpdf text + pdfjs/canvas page render, HEIC->sharp image prep (PARSE-01/02)
-- [ ] 03-05-PLAN.md - Vision field extraction: D-23 prompt + text-before-image call, structured-output fallback ladder, local Zod re-validate + repair retry (PARSE-03)
+- [x] 03-05-PLAN.md - Vision field extraction: D-23 prompt + text-before-image call, structured-output fallback ladder, local Zod re-validate + repair retry (PARSE-03)
 - [ ] 03-06-PLAN.md - Persistence: migration0003 parsed_results STRICT table + hash-keyed cache CRUD (PARSE-05 storage)
 
 **Wave 3** *(blocked on Wave 2)*
@@ -219,7 +219,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 (Phases 2,
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/8 | In Progress|  |
 | 2. Ingestion and Dedupe | 3/3 | Complete    | 2026-07-24 |
-| 3. AI Client and Parse Pipeline | 4/7 | In Progress|  |
+| 3. AI Client and Parse Pipeline | 5/7 | In Progress|  |
 | 4. QuickBooks Connection (Sandbox) | 0/TBD | Not started | - |
 | 5. Reconciliation and Matching | 0/TBD | Not started | - |
 | 6. Review UI | 0/TBD | Not started | - |
