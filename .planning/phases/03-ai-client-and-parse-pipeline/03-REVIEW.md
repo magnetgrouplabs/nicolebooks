@@ -32,15 +32,34 @@ findings:
   warning: 10
   info: 6
   total: 20
-status: issues_found
+status: fixed
+fixed_at: 2026-07-27
+fixed:
+  critical: 4
+  warning: 10
+  info: 0
+  skipped: 0
+  out_of_scope: 6  # the Info findings, not in this fix pass
 ---
+
+> **Fix pass, 2026-07-27.** All 4 Critical and all 10 Warning findings are FIXED, each with a
+> regression test that fails against the pre-fix code (every pin was verified by temporarily
+> reverting the fix and observing red). None were skipped: on inspection every finding was real.
+> The 6 Info findings were deliberately out of scope for this pass and remain open.
+>
+> Full suite green after the pass: `npm run build`, `npm run typecheck`, 358 unit tests
+> (up from 286), 8 Playwright e2e tests. `src/shared/ipc-contract.ts`, `src/shared/schemas.ts`
+> and `src/preload/index.ts` are byte-unchanged.
+>
+> Per-finding outcomes are recorded inline below, each under an **Outcome:** heading.
 
 # Phase 3: Code Review Report
 
 **Reviewed:** 2026-07-27T15:58:53Z
 **Depth:** standard
 **Files Reviewed:** 23
-**Status:** issues_found
+**Status:** issues_found (all 4 Critical and all 10 Warning findings fixed 2026-07-27; see the
+per-finding **Outcome** notes. The 6 Info findings remain open.)
 
 ## Summary
 
@@ -137,6 +156,21 @@ Add regression cases for `'$-45.00'`, `'USD -45.00'`, `'45.00-'`, `'(45.00)'` an
 `test/parse-validate.test.ts`, and one case asserting that a sign-flipped value never scores
 `'high'`.
 
+**Outcome: FIXED** (fa7cf42). The sign is now read from the raw string across all five printed
+conventions (leading minus, minus after a currency symbol or ISO code, trailing minus, accounting
+parentheses, CR suffix), with DR and "CR" inside a word deliberately staying positive. Two
+additions beyond the suggested fix, both found while testing it:
+
+- a trailing separator is stripped before parsing, because `'45.00 CR.'` otherwise read the real
+  decimal point as a grouping separator and inflated the amount 100x;
+- `confidence.ts` money grounding is now SIGN-AWARE (`groundsMoney`), so a positive value can no
+  longer be certified `high` by a document that prints a credit, or vice versa. That is the "then
+  certifies it" half of this finding, and it stays live even when the model itself drops a sign.
+
+Pinned by 11 cases across `test/parse-validate.test.ts` and `test/parse-confidence.test.ts`; 7 fail
+against the pre-fix code. The documented US-first `'1.234'` -> 123 behaviour and the European
+`'1.234,56'` form are unchanged and still covered.
+
 ---
 
 ### CR-02: `renderPdfPageImage` clamps the render scale to a *minimum* of 1, so a large-MediaBox page allocates an unbounded raster in the main process
@@ -187,6 +221,12 @@ if (!Number.isFinite(scale) || scale <= 0) scale = 1
 
 Add a spec that a synthetic 14400x14400 MediaBox renders to a bitmap at or under
 `RENDER_MAX_PIXELS`.
+
+**Outcome: FIXED** (bd42cf7). `RENDER_MIN_SCALE` is gone; `RENDER_MAX_PIXELS` (4M, ~2000x2000)
+plus an exported `computeRenderScale` now bound the OUTPUT pixel count and allow a scale below 1.
+Pinned by `test/parse-route.test.ts`: bounds across 7 geometries plus real renders of synthetic
+14400x14400 and 5000x5000 MediaBoxes. Pin verified: with the old formula the 5000x5000 page renders
+25,000,000 pixels and the spec fails.
 
 ---
 
@@ -241,6 +281,15 @@ Place the check immediately after the read (before `routeFile`) so no model call
 bytes, and add a spec that a byte reader returning content whose hash differs from the declared one
 produces a `parse-failed` row and writes nothing to `parsed_results`.
 
+**Outcome: FIXED** (52a5f75). The pipeline re-hashes the bytes immediately after the read, before
+routing and before any paid call, and a mismatch is a per-file failure with recoverable copy. Pinned
+by four cases in `test/parse-pipeline.test.ts` (stale bytes, nothing written to `parsed_results`,
+batch isolation, a valid hash belonging to a different file); three fail with the check removed.
+
+Also note: the fixtures in `test/parse-pipeline.test.ts` and `test/parse-cache.test.ts` now use the
+REAL digests of the bytes each reader returns. The old placeholders (`'a'.repeat(64)` paired with
+unrelated bytes) were encoding this exact defect, which is a large part of why it shipped green.
+
 ---
 
 ### CR-04: The renderer can read the AI API key back out through `secrets:get`, contradicting the phase's stated T-03-01 mitigation
@@ -294,6 +343,19 @@ Then extend `test/no-secret-leak.test.ts` with a handler-level case asserting `s
 returns `null` for both AI keys while `secretStore.get` still returns them main-side, and fix the
 three file headers so they describe the enforced behaviour.
 
+**Outcome: FIXED** (f958c6d). `src/main/ipc/secrets.ts` now holds a `RENDERER_UNREADABLE`
+deny-list sourced from the `AI_API_KEY_SECRET` / `AI_BASE_URL_SECRET` constants, so `secrets:get`
+returns null for both while `set` and `delete` still work and the health canary round trip (SC2's
+permanent proof) is untouched. Pinned at the handler level by `test/secrets-ipc-readback.test.ts`
+(7 cases) and end-to-end by a new test in `e2e/secret-roundtrip.spec.ts`, which failed against the
+pre-fix bundle.
+
+One deviation from the suggested fix, deliberate: `src/preload/index.ts` and
+`src/shared/ipc-contract.ts` were NOT touched, because seven plans depend on those files being
+byte-identical. Their headers describe behaviour that is now genuinely enforced main-side, so they
+are accurate as written. `src/main/ai/client.ts`'s header (which was in scope) was updated to name
+the enforcement point rather than implying that its own lack of a getter is sufficient.
+
 ## Warnings
 
 ### WR-01: `extractPdfText` leaks a pdfjs document (and its worker) for every native-route PDF
@@ -325,6 +387,14 @@ export async function extractPdfText(bytes: Buffer): Promise<PdfText> {
   }
 }
 ```
+
+**Outcome: FIXED** (4f4a4b8). `extractPdfText` now creates the document itself, extracts from it,
+and closes it in a never-throwing finally, matching the other two entry points. The root cause was
+confirmed in the installed library first (`node_modules/unpdf/dist/index.mjs:369`). Pinned by
+`test/parse-extract-pdf-teardown.test.ts`, which mocks unpdf (the leak is not observable through the
+real library, whose Node build uses a fake worker) and asserts extractText receives a DOCUMENT and
+the loading task is destroyed exactly once, including when extraction throws. 4 of 5 fail against
+the old body.
 
 ---
 
@@ -359,6 +429,12 @@ ipcMain.handle(Channels.aiListModels, async (event, raw) => {
 })
 ```
 
+**Outcome: FIXED** (1679f78). The handler wraps the call and rethrows `recoverableReason(err)`.
+The contract's `ModelInfo[]` return type is unchanged, so this stays a rejection and no shared file
+moved. Pinned by `test/ai-ipc.test.ts` (6 cases: a DNS failure carrying the host, an APIError
+carrying both the host and a key fragment, a credentials-missing throw, the happy path, and the
+strict-empty payload gate); 3 fail against the old handler.
+
 ---
 
 ### WR-03: The D-21 page cap bounds images but leaves the reference text completely unbounded
@@ -391,6 +467,11 @@ referenceText = joined === '' ? null : joined.slice(0, MAX_REFERENCE_TEXT_CHARS)
 // clipped participates in the same `truncated` flag the page cap already sets
 ```
 
+**Outcome: FIXED** (39727fc). `MAX_REFERENCE_TEXT_CHARS` (50k) clips the joined text and the clip
+feeds the same `truncated` flag the page cap sets, so a partial read is never presented as a
+complete one. Pinned in `test/parse-pipeline.test.ts` by a 400-page statement (clipped and flagged)
+and a normal bill (untouched); the clip test fails without the cap.
+
 ---
 
 ### WR-04: `canFallBack` is a deny-list, so statuses that are not rung problems still burn the whole ladder
@@ -420,6 +501,12 @@ function canFallBack(error: unknown): boolean {
   ...
 }
 ```
+
+**Outcome: FIXED** (0c8b328). `FALLBACK_STATUS = {400, 404, 422}`; everything else carrying a
+status stops at one call, while a throw with NO status (a bare gateway wrapper whose `parse` is
+undefined) still descends. Pinned in `test/parse-extract.test.ts` across the three descending
+statuses, seven non-descending ones, a 5xx, and the no-status TypeError path. Pin verified: 402
+walks all three rungs on the old code.
 
 ---
 
@@ -451,6 +538,14 @@ if (!first.ok && TEMPERATURE_REJECTED.test(describeError(first.error))) {
 
 At minimum, add the `temperature` retry so the model picker's "Vision" badge does not lead the user
 into a dead end.
+
+**Outcome: FIXED** (303a593). On a failure whose message names `temperature` (and is not a 5xx),
+the ladder retries the SAME rung with the parameter omitted and keeps it omitted for the rest of the
+document, including the repair re-ask. Matching the parameter name rather than a model-id list keeps
+this working for the next family that behaves the same way. Pinned in `test/parse-extract.test.ts`
+by the o-series rescue, the sticky-omission path through a repair, temperature 0 still being sent to
+models that accept it (D-22 determinism), and a 5xx that merely mentions the word; 2 fail with the
+retry disabled.
 
 ---
 
@@ -486,6 +581,15 @@ for (const file of list) {
 `extractFields` already distinguishes the reasons; surface the offending status on
 `ExtractFailure` so the pipeline can classify it.
 
+**Outcome: FIXED** (eeeeb6d). `ExtractFailure` now carries `status` (a bare number, so no provider
+text rides along), and the pipeline keeps a batch-scope breaker: 401/403 map to "update your key in
+Settings", 429 to "wait a few minutes", and the remaining files are marked without a request. One
+refinement over the suggested fix: the breaker stops AFTER the free cache lookup, so already-parsed
+files in the same batch are still answered rather than discarded, and every row still carries its
+reason plus a progress event. Pinned by 5 cases in `test/parse-pipeline.test.ts`, including the two
+that must NOT short-circuit (a 500 stays per-file; cached rows still resolve); 2 fail with the
+breaker disabled.
+
 ---
 
 ### WR-07: "Scan now" is not disabled while a parse batch is running, so batches overlap and uncached files can be paid for twice
@@ -507,6 +611,14 @@ Three consequences:
 
 **Fix:** `disabled={scanning || parsing}` on the button, and guard `runParse` against re-entry
 (a ref holding the in-flight promise, or an early return when `parsing` is true).
+
+**Outcome: FIXED** (8d41c27). The button is now `disabled={scanning || parsing}`, extracted as a
+`ScanButton` component so the rule is provable without a DOM, and `runParse` holds an in-flight ref
+as a second line of defence. Pinned by `test/bills-scan-button.test.ts`, which renders the component
+with react-dom/server and asserts the real `disabled` attribute (a substring check would pass either
+way, because the branded Button carries `disabled:opacity-50` in its class list). `vitest.config.ts`
+gained the `@` and `@shared` aliases from `electron.vite.config.ts` to make renderer specs possible;
+the node test environment is unchanged.
 
 ---
 
@@ -544,6 +656,14 @@ if (!apiKey.trim() && !keyMatchesUrl) {
 
 Track the saved-for host in `app_settings` (non-secret) so the pairing survives a restart.
 
+**Outcome: FIXED** (f6bd67c). The endpoint a stored key belongs to is recorded in `app_settings`
+under `ai-key-base-url` (non-secret, so SQLite is correct here and the keychain is not, D-05), read
+back on mount, and Connect is blocked when the base URL does not match it and no new key was typed.
+The check runs BEFORE anything is written, so a refused connect cannot leave the stored key paired
+with an endpoint it does not belong to. The pairing surviving a restart also fixes the session-only
+`keySaved` placeholder noted in IN-06. Pinned by `test/settings-key-provider.test.ts` (7 cases,
+including the two paths that must NOT be blocked); 4 fail against the old rule.
+
 ---
 
 ### WR-09: The inbox containment guard is lexical only — it never resolves symlinks
@@ -573,6 +693,14 @@ if (real !== realRoot && !real.startsWith(realRoot.endsWith(sep) ? realRoot : re
   throw new Error(UNSAFE_FILENAME)
 }
 ```
+
+**Outcome: FIXED** (e8122f5). `safeInboxPath` now realpaths both the root and the candidate,
+re-checks containment, and returns the RESOLVED path so the link cannot be re-followed after the
+check. A missing file still throws ENOENT, which `recoverableReason` already maps to the "no longer
+readable" copy. Pinned in `test/parse-pipeline.test.ts` by a link out of the inbox (refused with the
+unsafe-name copy, no model call) plus a positive control that an ordinary inbox file still parses;
+the helper prefers a file symlink and falls back to a directory junction where symlinks need
+elevation. Pin verified: without realpath the outside document's bytes are read.
 
 ---
 
@@ -606,6 +734,13 @@ const flagged = (parse?.validationFlags?.length ?? 0) > 0
   </span>
 )}
 ```
+
+**Outcome: FIXED** (8d41c27). A flagged row now renders "(needs review)" in `text-destructive`
+alongside a `Needs review` badge, driven by an exported `isFlagged` that reads both
+`validationFlags` and any `'flagged'` confidence level. The rich per-field UI stays in Phase 6
+(D-18); this is the minimum that makes displaying a value honest. Pinned by
+`test/bills-parse-flags.test.ts`, which renders the row with react-dom/server and asserts on
+semantic token classes only; 3 fail against the old component.
 
 ## Info
 
@@ -678,6 +813,26 @@ differentiate the two badge cases (e.g. "Vision" vs "Vision (likely)").
 
 ---
 
+## Info: not addressed in the fix pass
+
+IN-01 through IN-06 were deliberately out of scope for the 2026-07-27 fix pass (Critical and
+Warning only) and remain open. Two are now partly overtaken by fixes made elsewhere and should be
+re-read rather than actioned as written:
+
+- **IN-06** — the session-only `keySaved` half is fixed as a side effect of WR-08: the screen now
+  seeds it from the non-secret `ai-key-base-url` app setting, so the placeholder tells the truth
+  across a restart. The remaining items (render the selected model outside the `models.length > 0`
+  guard, a "Remove stored key" control, and distinguishing "Vision" from "Vision (likely)") are
+  untouched.
+- **IN-03** — `ai:list-models` is still uncalled, but the defect it carried (WR-02) is fixed, so
+  it is no longer an unexercised channel with a known leak.
+
+---
+
 _Reviewed: 2026-07-27T15:58:53Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+_Fixed: 2026-07-27_
+_Fixer: Claude (code-review --fix pass, 13 commits fa7cf42..f6bd67c)_
+_Scope: all 4 Critical + all 10 Warning; 0 skipped_
