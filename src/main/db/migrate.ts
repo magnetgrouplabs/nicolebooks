@@ -24,6 +24,18 @@ export type Migration = { version: number; up: (db: Database.Database) => void }
 // The code-controlled migration list. Append 0004, ... in later phases; never renumber an
 // existing entry (user_version is a forward-only ratchet). 0002 adds the Phase 2 dedupe
 // ledger posted_file_hashes; 0003 adds the Phase 3 parsed-results cache.
+//
+// RESERVED FOR THE FINISH SPRINT (SEAMS). Two agents write migrations in parallel worktrees, so
+// the numbers are assigned up front rather than raced for. Taking the "next free" number by
+// looking at this list would give both agents 0004 and produce two files with version: 4, of
+// which the runner would silently apply only the first (the second's version is no longer
+// greater than user_version). Use YOUR number, not the next free one:
+//   0004 -- qbo reference cache (vendors, expense accounts, payment accounts, items). QBO-CONNECT.
+//   0005 -- posting batches + per-entry audit ledger. POSTING-ENGINE.
+// Any migration beyond 0005 needs a number assigned by Fable. Add the import above, append the
+// entry here in ascending order, and follow the 0002/0003 shape: one STRICT table, integer cents
+// for money, INTEGER 0/1 for booleans (STRICT has no BOOLEAN and better-sqlite3 will not bind a
+// JS boolean), and never any secret material.
 const migrations: Migration[] = [migration0001, migration0002, migration0003]
 
 export function migrate(db: Database.Database): void {
