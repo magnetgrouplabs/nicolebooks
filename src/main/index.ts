@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { getDatabase } from './db/connection'
 import { migrate } from './db/migrate'
 import { registerIpc } from './ipc/register'
+import { initAutoUpdater } from './updater'
 
 // Dev vs packaged: electron-vite injects ELECTRON_RENDERER_URL during `electron-vite dev`.
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
@@ -18,7 +19,7 @@ const windowIcon = join(
   process.platform === 'win32' ? 'icon.ico' : 'icon.png'
 )
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   // Single hardened BrowserWindow (RESEARCH Pattern 2, threat T-01-01).
   const win = new BrowserWindow({
     width: 1200,
@@ -47,6 +48,8 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return win
 }
 
 // Single-instance lock: a second launch focuses the existing window instead of opening another.
@@ -69,7 +72,11 @@ if (!app.requestSingleInstanceLock()) {
     const db = getDatabase()
     migrate(db)
 
-    createWindow()
+    const win = createWindow()
+
+    // Auto-update against the public GitHub release feed. No-op unless app.isPackaged, so
+    // dev runs and the Playwright e2e suite never touch the network (see ./updater).
+    initAutoUpdater(win)
 
     // Register every IPC handler after the window exists and the app is ready, so safeStorage
     // and the handlers initialize post-ready (RESEARCH Pitfall 3). The renderer's window.api
