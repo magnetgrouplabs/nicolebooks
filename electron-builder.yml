@@ -1,0 +1,96 @@
+# electron-builder configuration for NicoleBooks.
+#
+# Produces a per-user NSIS installer on Windows and unsigned dmg + zip artifacts on macOS,
+# and publishes them to GitHub Releases at magnetgrouplabs/nicolebooks. The repository is
+# public, so electron-updater on the client needs no token to read the release feed.
+#
+# Signing is deliberately NOT configured yet. Certificate procurement (Apple Developer
+# Program, Windows HSM or Azure Trusted Signing) is a separate track; until it lands the
+# artifacts are unsigned and the README documents the SmartScreen and Gatekeeper prompts.
+
+appId: com.magnetgrouplabs.nicolebooks
+productName: NicoleBooks
+copyright: Copyright (c) 2026 Magnet Group Labs
+
+directories:
+  # build/ holds the icon artwork electron-builder reads (icon.ico, icon.png).
+  buildResources: build
+  # dist/ is already gitignored.
+  output: dist
+
+# What goes inside app.asar. electron-vite emits the three runtime artifacts into out/,
+# and package.json is required at runtime (Electron reads "main" from it). Production
+# dependencies are resolved and packed by electron-builder on its own, so they are not
+# listed here. build/icon.* is packed because src/main/index.ts loads the BrowserWindow
+# icon from app.getAppPath()/build at runtime.
+files:
+  - out/**
+  - package.json
+  - build/icon.ico
+  - build/icon.png
+
+asar: true
+
+# Native modules cannot be loaded from inside an asar archive. electron-builder's
+# smart-unpack detects these automatically; listing them makes the requirement explicit
+# and survives a future smart-unpack heuristic change.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+
+# Rebuild better-sqlite3 (and pick the right sharp binary) against the packaged Electron
+# ABI. This is electron-builder's default; it is pinned here so it cannot drift.
+npmRebuild: true
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  # One click, per user. Installing under the user profile means no UAC elevation prompt,
+  # which matters for a non-technical user on a locked-down machine.
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NicoleBooks
+  # Keep the local database, audit log, and stored credentials on uninstall.
+  deleteAppDataOnUninstall: false
+
+mac:
+  # electron-builder generates the .icns from this png (512x512 is its minimum).
+  icon: build/icon.png
+  category: public.app-category.finance
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  # Unsigned. A universal (x64 + arm64 merged) binary is NOT used: both native
+  # dependencies ship per-architecture binaries, and @electron/universal needs every
+  # differing file enumerated in x64ArchFiles to merge two such app bundles. Two separate
+  # single-arch artifacts are the lower-risk shape and electron-updater picks the right
+  # one from the arm64 suffix in the artifact name.
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  writeUpdateInfo: true
+
+# Public repo: update checks are anonymous, so no token is embedded in the shipped app.
+publish:
+  provider: github
+  owner: magnetgrouplabs
+  repo: nicolebooks
+  releaseType: release
