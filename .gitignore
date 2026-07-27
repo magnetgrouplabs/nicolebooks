@@ -11,6 +11,7 @@ secrets.enc
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 .env*
 
 # Test artifacts
