@@ -129,8 +129,17 @@ function ErrorLine({ children }: { children: string }): React.JSX.Element {
   return (
     <p
       role="alert"
-      className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+      className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
     >
+      {children}
+    </p>
+  )
+}
+
+/** The screen's section rule: a tracked cap over a hairline, matching the Bills screen. */
+function SectionLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <p className="border-b border-border pb-2 font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
       {children}
     </p>
   )
@@ -158,13 +167,15 @@ export function UndoConfirm({
     <div
       role="group"
       aria-label="Confirm undo"
-      className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+      className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/[0.06] p-4"
     >
-      <p className="font-sans text-sm font-semibold text-foreground">
+      <p className="font-heading text-base font-semibold text-foreground">
         Remove this batch from QuickBooks?
       </p>
-      <p className="font-sans text-sm text-muted-foreground">{undoConfirmBody(batch)}</p>
-      <div className="flex gap-2">
+      <p className="max-w-prose font-sans text-sm text-muted-foreground">
+        {undoConfirmBody(batch)}
+      </p>
+      <div className="flex flex-row-reverse justify-end gap-2">
         <Button variant="destructive" disabled={busy} onClick={onConfirm}>
           {busy ? 'Removing...' : 'Yes, remove them'}
         </Button>
@@ -189,16 +200,24 @@ export function BatchRow({
   const chip = batchChip(batch)
   return (
     <li>
+      {/*
+        Selection is carried by a brand rail down the left edge and a lifted surface, the same
+        language the sidebar uses for the current destination, rather than by a 1px crimson outline
+        that was almost invisible against the row beside it. cursor-pointer is explicit because a
+        row-shaped control that does not change the cursor does not read as clickable.
+      */}
       <button
         type="button"
         aria-pressed={selected}
         onClick={onSelect}
-        className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
-          selected ? 'border-primary bg-muted' : 'border-border bg-card hover:bg-muted'
+        className={`relative flex w-full cursor-pointer items-center justify-between gap-4 overflow-hidden rounded-md border px-4 py-3 text-left transition-colors duration-150 ease-standard ${
+          selected
+            ? 'border-border bg-muted before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary-vivid before:content-[""]'
+            : 'border-border bg-card hover:bg-muted'
         }`}
       >
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-sans text-sm font-medium text-card-foreground">
+          <span className="font-sans text-sm font-semibold text-card-foreground">
             {formatTimestamp(batch.createdAt)}
           </span>
           <span className="font-sans text-sm text-muted-foreground">
@@ -230,9 +249,9 @@ export function entryLabel(entry: PostingBatchEntry): string {
 export function EntryRow({ entry }: { entry: PostingBatchEntry }): React.JSX.Element {
   const chip = entryChip(entry)
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
+    <li className="flex items-start justify-between gap-3 rounded-md border border-border bg-card px-4 py-2.5">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate font-mono text-sm text-card-foreground">
+        <span className="truncate font-mono text-sm font-medium text-card-foreground">
           {entryLabel(entry)}
         </span>
         <span className="font-sans text-sm text-muted-foreground">
@@ -287,11 +306,11 @@ export function BatchReport({ summary }: { summary: PostingSummary }): React.JSX
     <section
       id={PRINT_REGION_ID}
       aria-label="Batch report"
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5 shadow-raised"
     >
       <style>{PRINT_STYLES}</style>
-      <div className="flex flex-col gap-0.5">
-        <h3 className="font-heading text-base font-semibold text-card-foreground">
+      <div className="flex flex-col gap-1">
+        <h3 className="font-heading text-lg font-semibold tracking-[-0.015em] text-card-foreground">
           Batch report
         </h3>
         <p className="font-sans text-sm text-muted-foreground">
@@ -305,57 +324,61 @@ export function BatchReport({ summary }: { summary: PostingSummary }): React.JSX
         </p>
       </div>
       <Separator />
+      {/*
+        A filed document, so it is set like one. Column headers are METADATA, not content: 11px,
+        tracked, uppercase, muted. They were 14px semibold, the same size as the data underneath
+        them, which is the table equivalent of shouting the labels. Figures (dates, money, ids) go
+        in the mono face and the money column is right aligned, because a column of amounts is read
+        by comparing the last digits and left-aligned money cannot be.
+      */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-border">
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
-                Document
-              </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
-                Vendor
-              </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
-                Category
-              </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
-                Type
-              </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
-                Date
-              </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
+              {['Document', 'Vendor', 'Category', 'Type', 'Date'].map((heading) => (
+                <th
+                  key={heading}
+                  className="py-2 pr-4 font-sans text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase"
+                >
+                  {heading}
+                </th>
+              ))}
+              <th className="py-2 pr-4 text-right font-sans text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 Amount
               </th>
-              <th className="py-1 pr-3 font-sans text-sm font-semibold text-muted-foreground">
+              <th className="py-2 pr-4 font-sans text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
                 QuickBooks id
               </th>
-              <th className="py-1 font-sans text-sm font-semibold text-muted-foreground">Status</th>
+              <th className="py-2 font-sans text-[0.6875rem] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                Status
+              </th>
             </tr>
           </thead>
           <tbody>
             {summary.lines.map((line) => (
-              <tr key={line.fileHash} className="border-b border-border/50">
-                <td className="py-1 pr-3 font-mono text-sm text-card-foreground">
+              <tr key={line.fileHash} className="border-b border-border/60 last:border-b-0">
+                <td className="py-2 pr-4 font-mono text-sm text-card-foreground">
                   {line.filename}
                 </td>
-                <td className="py-1 pr-3 font-sans text-sm text-card-foreground">
+                <td className="py-2 pr-4 font-sans text-sm text-card-foreground">
                   {line.vendorName}
                 </td>
-                <td className="py-1 pr-3 font-sans text-sm text-card-foreground">
+                <td className="py-2 pr-4 font-sans text-sm text-card-foreground">
                   {line.categoryName}
                 </td>
-                <td className="py-1 pr-3 font-sans text-sm text-card-foreground">
+                <td className="py-2 pr-4 font-sans text-sm text-muted-foreground">
                   {line.entryType === 'bill' ? 'Bill' : 'Expense'}
                 </td>
-                <td className="py-1 pr-3 font-sans text-sm text-card-foreground">{line.txnDate}</td>
-                <td className="py-1 pr-3 font-sans text-sm text-card-foreground">
+                <td className="py-2 pr-4 font-mono text-sm text-muted-foreground">
+                  {line.txnDate}
+                </td>
+                <td className="py-2 pr-4 text-right font-mono text-sm font-medium text-card-foreground">
                   {formatCents(line.amountCents)}
                 </td>
-                <td className="py-1 pr-3 font-mono text-sm text-card-foreground">
+                <td className="py-2 pr-4 font-mono text-sm text-muted-foreground">
                   {line.qboId ?? ''}
                 </td>
-                <td className="py-1 font-sans text-sm text-card-foreground">
+                <td className="py-2 font-sans text-sm text-card-foreground">
                   {reportStatus(line.state, line.undoneAt)}
                 </td>
               </tr>
@@ -481,14 +504,16 @@ export function HistoryScreen(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {loadError && <ErrorLine>{loadError}</ErrorLine>}
       {undoError && <ErrorLine>{undoError}</ErrorLine>}
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
         <div className="flex flex-col gap-1">
-          <h2 className="font-sans text-sm font-semibold text-muted-foreground">Past batches</h2>
-          <p className="font-sans text-sm text-muted-foreground">
+          <h2 className="font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            Past batches
+          </h2>
+          <p className="font-sans text-sm text-foreground">
             {batches.length} {batches.length === 1 ? 'batch' : 'batches'} sent to QuickBooks
           </p>
         </div>
@@ -509,7 +534,7 @@ export function HistoryScreen(): React.JSX.Element {
       )}
 
       {undoResult && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-raised">
           <p className="font-sans text-sm font-semibold text-card-foreground">
             {undoResult.results.filter((r) => r.undone).length} of {undoResult.results.length}{' '}
             removed from QuickBooks
@@ -524,7 +549,7 @@ export function HistoryScreen(): React.JSX.Element {
         </div>
       )}
 
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1.5">
         {batches.map((batch) => (
           <BatchRow
             key={batch.batchId}
@@ -536,10 +561,8 @@ export function HistoryScreen(): React.JSX.Element {
       </ul>
 
       {detail && (
-        <div className="flex flex-col gap-2">
-          <p className="font-sans text-sm font-semibold text-muted-foreground">
-            Entries in this batch
-          </p>
+        <div className="flex flex-col gap-3">
+          <SectionLabel>Entries in this batch</SectionLabel>
           <ul className="flex flex-col gap-2">
             {detail.entries.map((entry) => (
               <EntryRow key={entry.fileHash} entry={entry} />
@@ -549,10 +572,12 @@ export function HistoryScreen(): React.JSX.Element {
       )}
 
       {summary && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <p className="font-sans text-sm font-semibold text-muted-foreground">Report</p>
-            <Button variant="outline" onClick={() => window.print()}>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4 border-b border-border pb-2">
+            <p className="font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Report
+            </p>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer aria-hidden="true" />
               Print
             </Button>

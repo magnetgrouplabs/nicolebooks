@@ -47,9 +47,17 @@ const BASE_URL_PRESETS: ReadonlyArray<{ id: PresetId; label: string; url: string
   { id: 'custom', label: 'Other (enter a URL)', url: '' }
 ]
 
-/** Shared control styling, built only from semantic theme tokens. */
+/**
+ * Shared control styling, built only from semantic theme tokens.
+ *
+ * 36px tall on the control rung of the radius ladder, so every field on this screen matches every
+ * field on the review screen and both match the buttons beside them.
+ */
 const FIELD_CLASS =
-  'w-full max-w-xl rounded-lg border border-border bg-background px-3 py-2 font-sans text-sm text-foreground outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+  'h-9 w-full max-w-xl rounded-md border border-border bg-background px-3 font-sans text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-standard focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+
+/** A form label. One shape, used by every field on the screen. */
+const LABEL_CLASS = 'font-sans text-xs font-medium tracking-[0.06em] text-muted-foreground uppercase'
 
 /**
  * app_settings key recording WHICH endpoint the stored API key belongs to.
@@ -181,6 +189,33 @@ function VisionBadge({ vision }: { vision: ModelInfo['vision'] }): React.JSX.Ele
   if (vision === 'vision') return <Badge variant="default">Vision</Badge>
   if (vision === 'vision-family') return <Badge variant="secondary">Vision</Badge>
   return null
+}
+
+/**
+ * One settings section: a tracked cap over a hairline, then a card holding its controls.
+ *
+ * This screen was a single flat column of thirty elements at one indentation, with four `h2`s the
+ * same size and weight as the body text between them doing all the grouping. Four settings that
+ * belong together and four that do not looked identical, which is how a settings screen becomes a
+ * wall. Each concern now has an edge around it.
+ */
+function SettingsSection({
+  title,
+  children
+}: {
+  title: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="border-b border-border pb-2 font-sans text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+        {title}
+      </h2>
+      <div className="flex max-w-3xl flex-col gap-4 rounded-lg border border-border bg-card p-5 shadow-raised">
+        {children}
+      </div>
+    </section>
+  )
 }
 
 export function SettingsScreen(): React.JSX.Element {
@@ -548,229 +583,230 @@ export function SettingsScreen(): React.JSX.Element {
         : 'Enter your API key, choose your provider, then run Connect and test.'
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="font-sans text-sm font-semibold text-muted-foreground">Secret store</h2>
-      <HealthIndicator />
+    <div className="flex flex-col gap-8">
+      <SettingsSection title="Secret store">
+        <HealthIndicator />
+      </SettingsSection>
 
-      <h2 className="font-sans text-sm font-semibold text-muted-foreground">Inbox folder</h2>
-      <p className="font-mono text-sm text-muted-foreground">
-        {inboxPath ?? 'Locating your inbox folder...'}
-      </p>
-      <div>
-        <Button variant="outline" disabled={choosing} onClick={() => void chooseInbox()}>
-          Change inbox folder
-        </Button>
-      </div>
-      {chooseError && (
-        <p
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-        >
-          {chooseError}
-        </p>
-      )}
-
-      <h2 className="font-sans text-sm font-semibold text-muted-foreground">AI connection</h2>
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="ai-provider" className="font-sans text-sm font-medium text-foreground">
-          Provider
-        </label>
-        <select
-          id="ai-provider"
-          className={FIELD_CLASS}
-          value={preset}
-          onChange={(e) => setPreset(e.target.value as PresetId)}
-        >
-          {BASE_URL_PRESETS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {preset !== 'custom' && (
-          <p className="font-mono text-sm text-muted-foreground">{resolveBaseUrl()}</p>
-        )}
-      </div>
-
-      {preset === 'custom' && (
-        <div className="flex flex-col gap-1">
-          <label htmlFor="ai-base-url" className="font-sans text-sm font-medium text-foreground">
-            Base URL
-          </label>
-          <input
-            id="ai-base-url"
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            className={FIELD_CLASS}
-            placeholder="https://your-endpoint.example/v1"
-            value={customUrl}
-            onChange={(e) => setCustomUrl(e.target.value)}
-          />
-          <p className="font-sans text-sm text-muted-foreground">
-            Must start with https:// so your key is never sent unencrypted.
+      <SettingsSection title="Inbox folder">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="min-w-0 truncate font-mono text-sm text-card-foreground">
+            {inboxPath ?? 'Locating your inbox folder...'}
           </p>
+          <Button variant="outline" disabled={choosing} onClick={() => void chooseInbox()}>
+            Change inbox folder
+          </Button>
         </div>
-      )}
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="ai-api-key" className="font-sans text-sm font-medium text-foreground">
-          API key
-        </label>
-        <input
-          id="ai-api-key"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          className={FIELD_CLASS}
-          placeholder={
-            keySaved && keyProvider === resolveBaseUrl()
-              ? 'Saved. Type a new key to replace it.'
-              : keySaved
-                ? 'Enter the key for this provider'
-                : 'Paste your API key'
-          }
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-        <p className="font-sans text-sm text-muted-foreground">
-          Your key is stored in this machine&apos;s secure keychain and is never shown again. A key
-          is only ever sent to the provider it was saved for.
-        </p>
-      </div>
-
-      <div>
-        <Button disabled={testing} onClick={() => void connectAndTest()}>
-          {testing ? 'Connecting...' : 'Connect and test'}
-        </Button>
-      </div>
-
-      <div className="max-w-xl rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <StatusIcon className={`size-5 ${statusIconColor}`} aria-hidden="true" />
-          <span className="text-sm font-semibold text-card-foreground">{statusLabel}</span>
-        </div>
-        {statusSupporting && (
-          <p className="mt-1 pl-7 text-sm font-normal text-muted-foreground">{statusSupporting}</p>
-        )}
-      </div>
-
-      {aiError && (
-        <p
-          role="alert"
-          className="max-w-xl rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-        >
-          {aiError}
-        </p>
-      )}
-
-      {models.length > 0 && (
-        <div className="flex max-w-xl flex-col gap-2">
-          <label htmlFor="ai-model-filter" className="font-sans text-sm font-medium text-foreground">
-            Model
-          </label>
-          <p className="font-sans text-sm text-muted-foreground">
-            {selectedModel
-              ? `Currently using ${selectedModel}.`
-              : 'No model chosen yet. Pick one marked Vision so NicoleBooks can read scanned bills.'}
+        {chooseError && (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          >
+            {chooseError}
           </p>
-          <input
-            id="ai-model-filter"
-            type="search"
-            autoComplete="off"
-            spellCheck={false}
+        )}
+      </SettingsSection>
+
+      <SettingsSection title="AI connection">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="ai-provider" className={LABEL_CLASS}>
+            Provider
+          </label>
+          <select
+            id="ai-provider"
             className={FIELD_CLASS}
-            placeholder="Search models"
-            value={modelFilter}
-            onChange={(e) => setModelFilter(e.target.value)}
-          />
-          <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-            {visibleModels.map((model) => (
-              <li
-                key={model.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2"
-              >
-                <span className="font-mono text-sm text-card-foreground">{model.id}</span>
-                <div className="flex items-center gap-2">
-                  <VisionBadge vision={model.vision} />
-                  {selectedModel === model.id ? (
-                    <Badge variant="outline">Selected</Badge>
-                  ) : (
-                    <Button variant="ghost" size="sm" onClick={() => requestModel(model)}>
-                      Use this model
-                    </Button>
-                  )}
-                </div>
-              </li>
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as PresetId)}
+          >
+            {BASE_URL_PRESETS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
             ))}
-          </ul>
-          {visibleModels.length === 0 && (
+          </select>
+          {preset !== 'custom' && (
+            <p className="font-mono text-sm text-muted-foreground">{resolveBaseUrl()}</p>
+          )}
+        </div>
+
+        {preset === 'custom' && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="ai-base-url" className={LABEL_CLASS}>
+              Base URL
+            </label>
+            <input
+              id="ai-base-url"
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              className={FIELD_CLASS}
+              placeholder="https://your-endpoint.example/v1"
+              value={customUrl}
+              onChange={(e) => setCustomUrl(e.target.value)}
+            />
             <p className="font-sans text-sm text-muted-foreground">
-              No models match that search.
+              Must start with https:// so your key is never sent unencrypted.
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="ai-api-key" className={LABEL_CLASS}>
+            API key
+          </label>
+          <input
+            id="ai-api-key"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            className={FIELD_CLASS}
+            placeholder={
+              keySaved && keyProvider === resolveBaseUrl()
+                ? 'Saved. Type a new key to replace it.'
+                : keySaved
+                  ? 'Enter the key for this provider'
+                  : 'Paste your API key'
+            }
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+          <p className="max-w-prose font-sans text-sm text-muted-foreground">
+            Your key is stored in this machine&apos;s secure keychain and is never shown again. A key
+            is only ever sent to the provider it was saved for.
+          </p>
+        </div>
+
+        <div>
+          <Button disabled={testing} onClick={() => void connectAndTest()}>
+            {testing ? 'Connecting...' : 'Connect and test'}
+          </Button>
+        </div>
+
+        <div className="rounded-md border border-border bg-muted/50 p-4">
+          <div className="flex items-center gap-2.5">
+            <StatusIcon className={`size-4 shrink-0 ${statusIconColor}`} aria-hidden="true" />
+            <span className="font-sans text-sm font-semibold text-card-foreground">
+              {statusLabel}
+            </span>
+          </div>
+          {statusSupporting && (
+            <p className="mt-1.5 pl-6.5 font-sans text-sm font-normal text-muted-foreground">
+              {statusSupporting}
             </p>
           )}
         </div>
-      )}
 
-      {pendingModel && (
-        <div
-          role="alertdialog"
-          aria-label="Confirm model choice"
-          className="max-w-xl rounded-xl border border-border bg-card p-4"
-        >
-          <p className="font-sans text-sm font-semibold text-card-foreground">
-            This model is not confirmed vision-capable. Use anyway?
-          </p>
-          <p className="mt-1 font-sans text-sm text-muted-foreground">
-            NicoleBooks could not confirm that {pendingModel.id} can read images. If it cannot,
-            photos and scanned bills will fail to parse.
-          </p>
-          <div className="mt-3 flex items-center gap-2">
-            <Button variant="outline" onClick={() => void selectModel(pendingModel)}>
-              Use anyway
-            </Button>
-            <Button variant="ghost" onClick={() => setPendingModel(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <h2 className="font-sans text-sm font-semibold text-muted-foreground">
-        QuickBooks connection
-      </h2>
-
-      <div className="max-w-xl rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center gap-2">
-          {qboConnected ? (
-            <Badge variant="default">Connected</Badge>
-          ) : qboExpired ? (
-            <Badge variant="secondary">Reconnect needed</Badge>
-          ) : (
-            <Badge variant="outline">Not connected</Badge>
-          )}
-          <span className="text-sm font-semibold text-card-foreground">
-            {qboStatusLabel(qboStatus)}
-          </span>
-        </div>
-        <p className="mt-1 font-sans text-sm text-muted-foreground">
-          {qboConnected || qboExpired
-            ? formatSyncTime(qboStatus?.lastSyncAt ?? null)
-            : 'Connect NicoleBooks to your QuickBooks company so it can read your vendors, categories, and payment accounts.'}
-        </p>
-        {qboStatus?.realmId && (
-          <p className="mt-1 font-mono text-sm text-muted-foreground">
-            Company id {qboStatus.realmId}
+        {aiError && (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          >
+            {aiError}
           </p>
         )}
 
-        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-4">
-          <label
-            htmlFor="qbo-environment"
-            className="font-sans text-sm font-medium text-foreground"
+        {models.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="ai-model-filter" className={LABEL_CLASS}>
+              Model
+            </label>
+            <p className="font-sans text-sm text-muted-foreground">
+              {selectedModel
+                ? `Currently using ${selectedModel}.`
+                : 'No model chosen yet. Pick one marked Vision so NicoleBooks can read scanned bills.'}
+            </p>
+            <input
+              id="ai-model-filter"
+              type="search"
+              autoComplete="off"
+              spellCheck={false}
+              className={FIELD_CLASS}
+              placeholder="Search models"
+              value={modelFilter}
+              onChange={(e) => setModelFilter(e.target.value)}
+            />
+            <ul className="flex max-h-80 flex-col gap-1.5 overflow-y-auto">
+              {visibleModels.map((model) => (
+                <li
+                  key={model.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2"
+                >
+                  <span className="truncate font-mono text-sm text-card-foreground">
+                    {model.id}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <VisionBadge vision={model.vision} />
+                    {selectedModel === model.id ? (
+                      <Badge variant="outline">Selected</Badge>
+                    ) : (
+                      <Button variant="ghost" size="sm" onClick={() => requestModel(model)}>
+                        Use this model
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {visibleModels.length === 0 && (
+              <p className="font-sans text-sm text-muted-foreground">No models match that search.</p>
+            )}
+          </div>
+        )}
+
+        {pendingModel && (
+          <div
+            role="alertdialog"
+            aria-label="Confirm model choice"
+            className="rounded-md border border-warning/30 bg-warning/12 p-4"
           >
+            <p className="font-sans text-sm font-semibold text-warning-foreground">
+              This model is not confirmed vision-capable. Use anyway?
+            </p>
+            <p className="mt-1 font-sans text-sm text-muted-foreground">
+              NicoleBooks could not confirm that {pendingModel.id} can read images. If it cannot,
+              photos and scanned bills will fail to parse.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <Button variant="outline" onClick={() => void selectModel(pendingModel)}>
+                Use anyway
+              </Button>
+              <Button variant="ghost" onClick={() => setPendingModel(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </SettingsSection>
+
+      <SettingsSection title="QuickBooks connection">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {qboConnected ? (
+              <Badge variant="default">Connected</Badge>
+            ) : qboExpired ? (
+              <Badge variant="warning">Reconnect needed</Badge>
+            ) : (
+              <Badge variant="outline">Not connected</Badge>
+            )}
+            <span className="font-sans text-sm font-semibold text-card-foreground">
+              {qboStatusLabel(qboStatus)}
+            </span>
+          </div>
+          <p className="max-w-prose font-sans text-sm text-muted-foreground">
+            {qboConnected || qboExpired
+              ? formatSyncTime(qboStatus?.lastSyncAt ?? null)
+              : 'Connect NicoleBooks to your QuickBooks company so it can read your vendors, categories, and payment accounts.'}
+          </p>
+          {qboStatus?.realmId && (
+            <p className="font-mono text-sm text-muted-foreground">
+              Company id {qboStatus.realmId}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5 border-t border-border pt-4">
+          <label htmlFor="qbo-environment" className={LABEL_CLASS}>
             QuickBooks company
           </label>
           <select
@@ -787,132 +823,137 @@ export function SettingsScreen(): React.JSX.Element {
             ))}
           </select>
           {qboEnvironment === 'production' ? (
-            <p className="font-sans text-sm text-muted-foreground">{QBO_LIVE_WARNING}</p>
+            // Live mode puts entries in real books. It gets the warning tint, which is the one
+            // place on this screen where a coloured surface is carrying information.
+            <p className="mt-1 rounded-md border border-warning/30 bg-warning/12 px-3 py-2 font-sans text-sm text-warning-foreground">
+              {QBO_LIVE_WARNING}
+            </p>
           ) : (
             <p className="font-sans text-sm text-muted-foreground">
               Sandbox is the Intuit test company. Nothing you send there touches real books.
             </p>
           )}
         </div>
-      </div>
 
-      {pendingEnvironment && (
-        <div
-          role="alertdialog"
-          aria-label="Confirm QuickBooks environment change"
-          className="max-w-xl rounded-xl border border-border bg-card p-4"
-        >
-          <p className="font-sans text-sm font-semibold text-card-foreground">
-            {QBO_SWITCH_CONFIRM}
-          </p>
-          <p className="mt-1 font-sans text-sm text-muted-foreground">
-            Your QuickBooks app keys stay saved on this machine. You can connect again at any time.
-          </p>
-          <div className="mt-3 flex items-center gap-2">
-            <Button variant="outline" onClick={() => void applyEnvironment(pendingEnvironment)}>
-              Switch and disconnect
-            </Button>
-            <Button variant="ghost" onClick={() => setPendingEnvironment(null)}>
-              Cancel
-            </Button>
+        {pendingEnvironment && (
+          <div
+            role="alertdialog"
+            aria-label="Confirm QuickBooks environment change"
+            className="rounded-md border border-warning/30 bg-warning/12 p-4"
+          >
+            <p className="font-sans text-sm font-semibold text-warning-foreground">
+              {QBO_SWITCH_CONFIRM}
+            </p>
+            <p className="mt-1 font-sans text-sm text-muted-foreground">
+              Your QuickBooks app keys stay saved on this machine. You can connect again at any time.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <Button variant="outline" onClick={() => void applyEnvironment(pendingEnvironment)}>
+                Switch and disconnect
+              </Button>
+              <Button variant="ghost" onClick={() => setPendingEnvironment(null)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={qboBusy !== null} onClick={() => void connectQuickBooks()}>
-          {qboBusy === 'connect'
-            ? 'Waiting for your browser...'
-            : qboExpired
-              ? 'Reconnect to QuickBooks'
-              : qboConnected
-                ? 'Connect a different company'
-                : 'Connect to QuickBooks'}
-        </Button>
-        {(qboConnected || qboExpired) && (
-          <>
-            <Button
-              variant="outline"
-              disabled={qboBusy !== null || qboExpired}
-              onClick={() => void syncQuickBooksReference()}
-            >
-              {qboBusy === 'sync' ? 'Syncing...' : 'Sync now'}
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={qboBusy !== null}
-              onClick={() => void disconnectQuickBooks()}
-            >
-              {qboBusy === 'disconnect' ? 'Disconnecting...' : 'Disconnect'}
-            </Button>
-          </>
         )}
-      </div>
 
-      {qboNotice && (
-        <p className="max-w-xl rounded-lg border border-border bg-card px-3 py-2 font-sans text-sm text-muted-foreground">
-          {qboNotice}
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <Button disabled={qboBusy !== null} onClick={() => void connectQuickBooks()}>
+            {qboBusy === 'connect'
+              ? 'Waiting for your browser...'
+              : qboExpired
+                ? 'Reconnect to QuickBooks'
+                : qboConnected
+                  ? 'Connect a different company'
+                  : 'Connect to QuickBooks'}
+          </Button>
+          {(qboConnected || qboExpired) && (
+            <>
+              <Button
+                variant="outline"
+                disabled={qboBusy !== null || qboExpired}
+                onClick={() => void syncQuickBooksReference()}
+              >
+                {qboBusy === 'sync' ? 'Syncing...' : 'Sync now'}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={qboBusy !== null}
+                onClick={() => void disconnectQuickBooks()}
+              >
+                {qboBusy === 'disconnect' ? 'Disconnecting...' : 'Disconnect'}
+              </Button>
+            </>
+          )}
+        </div>
+
+        {qboNotice && (
+          <p className="rounded-md border border-border bg-muted/50 px-3 py-2 font-sans text-sm text-muted-foreground">
+            {qboNotice}
+          </p>
+        )}
+
+        {qboError && (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          >
+            {qboError}
+          </p>
+        )}
+      </SettingsSection>
+
+      <SettingsSection title="QuickBooks app keys">
+        <p className="max-w-prose font-sans text-sm text-muted-foreground">
+          These come from your Intuit developer app and are needed once, before the first connection.
+          They are stored in this machine&apos;s secure keychain and are never shown again.
         </p>
-      )}
 
-      {qboError && (
-        <p
-          role="alert"
-          className="max-w-xl rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-        >
-          {qboError}
-        </p>
-      )}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="qbo-client-id" className={LABEL_CLASS}>
+            Client id
+          </label>
+          <input
+            id="qbo-client-id"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            className={FIELD_CLASS}
+            placeholder={qboClientSaved ? 'Saved. Type a new client id to replace it.' : 'Paste your client id'}
+            value={qboClientId}
+            onChange={(e) => setQboClientId(e.target.value)}
+          />
+        </div>
 
-      <h3 className="font-sans text-sm font-medium text-foreground">QuickBooks app keys</h3>
-      <p className="max-w-xl font-sans text-sm text-muted-foreground">
-        These come from your Intuit developer app and are needed once, before the first connection.
-        They are stored in this machine&apos;s secure keychain and are never shown again.
-      </p>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="qbo-client-secret" className={LABEL_CLASS}>
+            Client secret
+          </label>
+          <input
+            id="qbo-client-secret"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            className={FIELD_CLASS}
+            placeholder={
+              qboClientSaved ? 'Saved. Type a new client secret to replace it.' : 'Paste your client secret'
+            }
+            value={qboClientSecret}
+            onChange={(e) => setQboClientSecret(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="qbo-client-id" className="font-sans text-sm font-medium text-foreground">
-          Client id
-        </label>
-        <input
-          id="qbo-client-id"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          className={FIELD_CLASS}
-          placeholder={qboClientSaved ? 'Saved. Type a new client id to replace it.' : 'Paste your client id'}
-          value={qboClientId}
-          onChange={(e) => setQboClientId(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="qbo-client-secret" className="font-sans text-sm font-medium text-foreground">
-          Client secret
-        </label>
-        <input
-          id="qbo-client-secret"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          className={FIELD_CLASS}
-          placeholder={
-            qboClientSaved ? 'Saved. Type a new client secret to replace it.' : 'Paste your client secret'
-          }
-          value={qboClientSecret}
-          onChange={(e) => setQboClientSecret(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <Button
-          variant="outline"
-          disabled={savingQboClient}
-          onClick={() => void saveQboClientCredentials()}
-        >
-          {savingQboClient ? 'Saving...' : 'Save QuickBooks keys'}
-        </Button>
-      </div>
+        <div>
+          <Button
+            variant="outline"
+            disabled={savingQboClient}
+            onClick={() => void saveQboClientCredentials()}
+          >
+            {savingQboClient ? 'Saving...' : 'Save QuickBooks keys'}
+          </Button>
+        </div>
+      </SettingsSection>
     </div>
   )
 }
