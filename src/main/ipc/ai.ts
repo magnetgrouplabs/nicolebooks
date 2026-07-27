@@ -61,12 +61,21 @@ export function registerAiIpc(): void {
     }
   })
 
-  // Same list+classify path, re-fetched. Contract type is ModelInfo[], so a failure rejects and
-  // the renderer's catch surfaces it; the rejection carries only the opaque code, never the URL.
+  // Same list+classify path, re-fetched. The contract type is ModelInfo[], so a failure REJECTS
+  // rather than returning a status object — but the rejection must still carry fixed copy only.
+  // Without the try/catch this handler forwarded whatever the SDK threw: ipcMain.handle
+  // serialises the thrown message into the renderer's rejection, an undici DNS failure reads
+  // `getaddrinfo ENOTFOUND gw.example.com`, and APIError messages are built from the provider's
+  // response body. The base URL is kept in the keychain precisely because it is treated as
+  // secret, so forwarding it here would be the leak the header above promises against.
   ipcMain.handle(Channels.aiListModels, async (event, raw) => {
     assertTrustedSender(event)
     AiListModelsSchema.parse(raw ?? {})
-    return listModels({ client: buildClient() })
+    try {
+      return await listModels({ client: buildClient() })
+    } catch (err) {
+      throw new Error(recoverableReason(err))
+    }
   })
 
   // The selected model id is the ONE piece of AI config that is non-secret, so it is the only one
