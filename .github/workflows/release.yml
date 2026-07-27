@@ -49,10 +49,36 @@ jobs:
 
       - name: Add the macOS Intel sharp binary
         if: runner.os == 'macOS'
-        # npm installs only the sharp binary matching the host (the runner is arm64), so the
-        # x64 dmg and zip would ship without one. These flags are sharp's documented way to
-        # fetch a binary for another architecture.
-        run: npm install --no-save --cpu=x64 --os=darwin @img/sharp-darwin-x64
+        # npm installs only the sharp binary matching the host, and the runner is arm64, so the
+        # x64 dmg and zip would otherwise ship without one and sharp would fail to load on an
+        # Intel Mac.
+        #
+        # sharp's documented --cpu/--os flags only filter which OPTIONAL dependencies a normal
+        # `npm install sharp` resolves. Naming a platform package directly still trips npm's
+        # EBADPLATFORM check, and running it as `npm install --cpu=x64 --os=darwin sharp` instead
+        # would re-resolve the whole tree under an x64 filter and prune the arm64 binaries that
+        # the other half of this build needs. --force is the one flag that waives the platform
+        # check, and because it is scoped to these two exact packages nothing already on disk is
+        # touched and no other platform's variants are pulled in.
+        #
+        # Versions are read out of sharp's own optionalDependencies so they cannot drift when
+        # sharp is upgraded. Both packages are pure binary drops with no install scripts, so
+        # --ignore-scripts costs nothing and skips a redundant second electron-rebuild that the
+        # root postinstall would otherwise trigger; the explicit rebuild step runs next anyway.
+        run: |
+          sharp_x64=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-darwin-x64']")
+          libvips_x64=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-libvips-darwin-x64']")
+          echo "sharp-darwin-x64@${sharp_x64}, sharp-libvips-darwin-x64@${libvips_x64}"
+          npm install --no-save --force --ignore-scripts \
+            "@img/sharp-darwin-x64@${sharp_x64}" \
+            "@img/sharp-libvips-darwin-x64@${libvips_x64}"
+          node -e "
+            const fs = require('fs')
+            for (const p of ['node_modules/@img/sharp-darwin-x64/lib', 'node_modules/@img/sharp-libvips-darwin-x64/lib']) {
+              if (!fs.existsSync(p)) throw new Error('missing ' + p)
+            }
+            console.log('darwin x64 sharp binaries present')
+          "
 
       - name: Rebuild native module against the Electron ABI
         # Surfaces an ABI or toolchain failure as its own step rather than inside packaging.

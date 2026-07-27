@@ -19,6 +19,14 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     environment: 'node',
+    // Vitest's 5 second default is calibrated for pure in-memory unit tests. A good part of this
+    // suite is not that: specs open a real SQLite file, run the migrations, and drive whole
+    // send/undo batches through it. Locally the slowest of them finishes in about a second, but a
+    // shared CI runner executing 69 files across parallel workers can stretch that past 5 seconds
+    // and fail a test that is not actually broken (release run 30314357818, posting-undo). The
+    // budget below is generous enough that only a genuine hang trips it.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // No unit specs exist yet (they arrive in 01-02 and 01-04); do not fail an empty run.
     passWithNoTests: true
   }
