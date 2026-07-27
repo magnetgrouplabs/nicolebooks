@@ -4,15 +4,19 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Magnet Group brand theme for the NicoleBooks renderer (BRAND-01).
+  NicoleBooks brand theme for the renderer (BRAND-01).
   Values are authored from the vendored canonical token file
-  (src/renderer/brand/tokens.json, v2026.06.1), never from the marketing
+  (src/renderer/brand/tokens.json, v2026.07.1), never from a marketing
   site's :root. Light foreground normalizes to #343434 and muted foreground
   to #6e6e73 (D-05, D-01). Both light and dark palettes are wired (D-03).
   Fonts are bundled woff2 served locally via @font-face, never a CDN (D-04).
+
+  Accent colors follow the NicoleBooks logo, not Magnet Group: the logo's
+  crimson #910023 replaces the former electric violet #6c00ff, and the accent
+  is a rose tint of that crimson rather than the former lavender.
 */
 
-/* Jost (headings and wordmark). Local woff2 only, never Google Fonts (D-04). */
+/* Jost (headings). Local woff2 only, never Google Fonts (D-04). */
 @font-face {
   font-family: 'Jost';
   font-style: normal;
@@ -110,28 +114,36 @@
   --card-foreground: #343434;
   --popover: #ffffff;
   --popover-foreground: #343434;
-  --primary: #6c00ff;
+  /* Crimson read straight off the NicoleBooks logo. 9.42:1 under white, so a
+     filled primary chip carries a white label at AA. */
+  --primary: #910023;
   --primary-foreground: #ffffff;
   --secondary: #f5f5f7;
   --secondary-foreground: #343434;
   --muted: #f5f5f7;
   --muted-foreground: #6e6e73;
-  --accent: #c77dff;
+  /* Rose tint of the crimson. Lab L 65.3 and 4.68:1 under the #343434 label,
+     matching the lightness and contrast the former lavender held in the scale. */
+  --accent: #e28299;
   --accent-foreground: #343434;
-  --destructive: #ff3b30;
+  /* Orange-red, NOT the former #ff3b30. Destructive has to read as "this needs
+     you" and never as brand chrome, and #ff3b30 sat only 11 degrees of hue from
+     the new crimson primary. #e8500f doubles that to 22.8 degrees while staying
+     24.9 degrees clear of the amber --warning on the other side. */
+  --destructive: #e8500f;
   --border: #e5e5ea;
   --input: #e5e5ea;
-  --ring: #6c00ff;
+  --ring: #910023;
   --radius: 0.625rem;
 
   /* Semantic status (carried forward, D-06). */
   --success: #28a745;
   --warning: #f59e0b;
-  --info: #6c00ff;
+  --info: #910023;
 
   /* Chart palette (carried forward, D-06). */
-  --chart-1: #6c00ff;
-  --chart-2: #c77dff;
+  --chart-1: #910023;
+  --chart-2: #e28299;
   --chart-3: #343434;
   --chart-4: #6e6e73;
   --chart-5: #1d1d1f;
@@ -155,7 +167,13 @@
   --muted-foreground: #a0a0a0;
   --border: #3a3a3a;
   --input: #3a3a3a;
-  --ring: #8f33ff;
+  /* The logo crimson is only 1.85:1 on #1a1a1a, far under the 3:1 that WCAG
+     1.4.11 asks of a focus ring, so dark mode gets a lightened crimson instead.
+     #e02a52 holds 3.83:1 on --background, 3.42:1 on --card and 3.16:1 on
+     --popover while drifting just 6 degrees of hue, so it still reads as the
+     brand red. It also clears 3:1 on all three surfaces, which the outgoing
+     #8f33ff did not (2.79:1 on #2a2a2a). */
+  --ring: #e02a52;
 }
 
 @layer base {
