@@ -17,10 +17,16 @@
 // Parse status (03-07, D-13/D-15/D-18b/D-26): after a successful scan the screen fires
 // window.api.parse.parseBatch() on the loaded set as a SEPARATE call (never from inside the scan
 // invoke, D-26), subscribes to the parse:progress broadcast for a live "parsing N of M" indicator,
-// and badges every loaded row parsed / cached / could-not-read. A row that failed carries a plain
-// recoverable reason and a Retry control that re-parses just that one file, mirroring the
-// include-anyway affordance above (D-15, flag-and-continue). Parsed rows show a read-only vendor
-// and total; the editable review table is Phase 6, deliberately not here.
+// and gives every loaded row one status chip. A row that failed carries a plain recoverable reason
+// and a Retry control that re-parses just that one file, mirroring the include-anyway affordance
+// above (D-15, flag-and-continue).
+//
+// Row structure (quick task 260727-iv0): a parsed row prints every populated field as a LABELED
+// label/value pair in a <dl>, with the review marker on the individual field whose deterministic
+// check failed rather than one blanket warning on the row. The status chip is a single Badge whose
+// label AND variant both come from statusChip's precedence table, so the color carries meaning
+// (default = done and good, secondary = benign, destructive = needs you, outline = skipped) instead
+// of a row wearing four badges at once. The editable review table is still Phase 6.
 //
 // The renderer performs zero direct fs/db access — every privileged operation runs main-side
 // behind the ingestion IPC group. All colors are semantic theme classes (no hardcoded hex).
@@ -35,7 +41,6 @@ import { Button } from '../components/ui/button'
 import type {
   ParseBatchFile,
   ParseFileResult,
-  ParseFileStatus,
   ParseProgress,
   ParsedFields,
   ScanFile,
@@ -81,10 +86,13 @@ const KNOWN_FIELDS: ReadonlySet<string> = new Set<string>(FIELD_ORDER)
  */
 const MONEY_FIELDS = ['subtotalCents', 'taxCents', 'totalCents'] as const
 
-// Loaded is the branded default; unsupported is a quiet outline. A caught already-posted file
-// reads destructive so it stands out; a within-scan copy reads secondary (benign — a copy of it
-// is already loaded). not-ready-skipped (plan 02-03) reads outline: it is a benign, recoverable
-// state (the file is still syncing), so it should not alarm like an error.
+// File-status labels and variants, read by rows 1 to 5 of statusChip's precedence table.
+// Unsupported is a quiet outline. A caught already-posted file reads destructive so it stands out;
+// a within-scan copy reads secondary (benign — a copy of it is already loaded). not-ready-skipped
+// (plan 02-03) reads outline: it is a benign, recoverable state (the file is still syncing), so it
+// should not alarm like an error. The `loaded` row is superseded by statusChip, which resolves a
+// loaded file from its PARSE state and only falls back to a secondary "Loaded" chip when no parse
+// result exists yet; the entry stays because ScanFileStatus is exhaustive.
 const STATUS_VARIANT: Record<ScanFileStatus, BadgeVariant> = {
   loaded: 'default',
   'duplicate-excluded': 'destructive',
@@ -101,21 +109,6 @@ const STATUS_LABEL: Record<ScanFileStatus, string> = {
   'unsupported-skipped': 'Unsupported'
 }
 
-// A freshly parsed file reads as the branded default. A cache hit reads secondary: nothing went
-// wrong and nothing was re-charged, it is simply already known. A failure reads destructive and
-// always pairs with a reason plus a Retry control, never a bare red badge (D-15).
-const PARSE_STATUS_VARIANT: Record<ParseFileStatus, BadgeVariant> = {
-  parsed: 'default',
-  cached: 'secondary',
-  'parse-failed': 'destructive'
-}
-
-const PARSE_STATUS_LABEL: Record<ParseFileStatus, string> = {
-  parsed: 'Parsed',
-  cached: 'Cached',
-  'parse-failed': 'Could not read'
-}
-
 /**
  * Render integer cents as printed money. String math only, never cents / 100: this value came
  * from the deterministic gate as an exact integer and a float round trip is how it stops being one.
@@ -127,12 +120,36 @@ function formatCents(cents: number): string {
   return `${negative ? '-' : ''}$${whole}.${digits.slice(-2)}`
 }
 
-/** The one-line read-only summary of a parsed bill. The editable table is Phase 6. */
-export function parsedSummary(parse: ParseFileResult): string | null {
-  if (!parse.fields) return null
-  const vendor = parse.fields.vendor.trim()
-  const total = formatCents(parse.fields.totalCents)
-  return vendor === '' ? total : `${vendor} ${total}`
+/**
+ * The text to print for one parsed field, or null when the field should be omitted entirely.
+ *
+ * Omit a null field, EXCEPT when it carries a flag, mirroring what computeConfidence already
+ * decided main-side: it drops ungradeable nulls "so Phase 6 does not badge an empty cell" but
+ * deliberately keeps a FLAGGED field "even when its value is null, because the flag itself is the
+ * thing to show". A cash receipt with no tax line legitimately has taxCents: null and printing
+ * "Tax: not found" on every such row is blank noise; but money:taxCents fires only when the
+ * document HAD a tax value and it was unreadable, and hiding that row would hide a failed check.
+ *
+ * vendor and totalCents are the two required fields and are always printed. A total that is not a
+ * number (only reachable through a degraded cache blob) prints Not found rather than $0.00,
+ * because a confident zero-dollar bill is the precise failure D-12 and WR-10 exist to prevent.
+ */
+function fieldValue(fields: ParsedFields, field: ParsedFieldKey, flagged: boolean): string | null {
+  const value = fields[field]
+  if (field === 'vendor') {
+    const vendor = typeof value === 'string' ? value.trim() : ''
+    return vendor === '' ? 'Not found' : vendor
+  }
+  if (field === 'totalCents') {
+    return typeof value === 'number' ? formatCents(value) : 'Not found'
+  }
+  if (value === null || value === undefined) return flagged ? 'Not found' : null
+  if (field === 'subtotalCents' || field === 'taxCents') {
+    return typeof value === 'number' ? formatCents(value) : 'Not found'
+  }
+  // invoiceDate / dueDate print the stored ISO string verbatim: reformatting a date is a display
+  // decision and this task is structure only.
+  return String(value)
 }
 
 /**
@@ -306,28 +323,50 @@ export function ScanRow({
   onRetry?: () => void
 }): React.JSX.Element {
   const isExcluded = file.status === 'duplicate-excluded'
-  // A caught already-posted file surfaces its posted date so the user knows when it was entered.
-  const label =
-    isExcluded && file.postedAt ? `Already entered on ${file.postedAt}` : STATUS_LABEL[file.status]
-  const summary = parse && parse.status !== 'parse-failed' ? parsedSummary(parse) : null
   const canRetry = parse?.status === 'parse-failed' && onRetry !== undefined
-  // A displayed amount always travels with its flag. Displaying the value alone is worse than
-  // displaying neither, because it reads as a clean, confident parse.
-  const flagged = summary !== null && isFlagged(parse)
+  const chip = statusChip(file, parse)
+  // A failed parse has no fields to print; it prints its recoverable reason instead.
+  const fields = parse?.status === 'parse-failed' ? undefined : parse?.fields
+  // Computed ONCE for the whole row, not per field. A displayed amount always travels with its
+  // flag: displaying the value alone is worse than displaying neither, because it reads as a
+  // clean, confident parse.
+  const flags = flaggedFields(parse)
 
   return (
-    <li className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
+    <li className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="font-mono text-sm text-card-foreground">{file.filename}</span>
-        {summary && (
-          <span
-            className={
-              flagged
-                ? 'font-sans text-sm text-destructive'
-                : 'font-sans text-sm text-muted-foreground'
-            }
-          >
-            {flagged ? `${summary} (needs review)` : summary}
+        {/* A definition list is the right semantics for label/value pairs, and it is what turns
+            an unreadable "Nassau Plumbing Supply $1,336.00" into data the user can actually
+            check field by field. */}
+        {fields && (
+          <dl className="flex flex-wrap gap-x-4 gap-y-0.5">
+            {FIELD_ORDER.map((field) => {
+              const flagged = flags.has(field)
+              const value = fieldValue(fields, field, flagged)
+              if (value === null) return null
+              return (
+                <div key={field} className="flex gap-1.5">
+                  <dt className="font-sans text-sm text-muted-foreground">{FIELD_LABEL[field]}</dt>
+                  <dd
+                    className={
+                      flagged
+                        ? 'font-sans text-sm text-destructive'
+                        : 'font-sans text-sm text-card-foreground'
+                    }
+                  >
+                    {flagged ? `${value} (needs review)` : value}
+                  </dd>
+                </div>
+              )
+            })}
+          </dl>
+        )}
+        {/* A truncated read presenting a confident total is the same class of silent-confidence
+            problem WR-10 exists to prevent, so say it out loud (D-21). */}
+        {parse?.truncated && (
+          <span className="font-sans text-sm text-muted-foreground">
+            Long document: only some of the pages were read.
           </span>
         )}
         {/* Visibility over silence: a failed row always says WHY, never just turns red. */}
@@ -336,14 +375,10 @@ export function ScanRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {included && <Badge variant="default">In batch</Badge>}
-        <Badge variant={STATUS_VARIANT[file.status]}>{label}</Badge>
-        {parse && (
-          <Badge variant={PARSE_STATUS_VARIANT[parse.status]}>
-            {PARSE_STATUS_LABEL[parse.status]}
-          </Badge>
-        )}
-        {flagged && <Badge variant="destructive">Needs review</Badge>}
+        {/* Exactly one chip. Inclusion is a different axis and needs no badge of its own: the
+            button beside it already reads "Remove from batch" whenever the file is in the batch,
+            which says the same thing and is also actionable. */}
+        <Badge variant={chip.variant}>{chip.label}</Badge>
         {isExcluded && onToggleInclude && (
           <Button variant="ghost" size="sm" onClick={onToggleInclude}>
             {included ? 'Remove from batch' : 'Include anyway'}
