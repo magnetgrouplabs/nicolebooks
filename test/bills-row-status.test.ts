@@ -174,6 +174,17 @@ describe('statusChip resolves one chip by first match on the precedence table', 
     })
   })
 
+  // What the ledger actually stores is the exact instant a QuickBooks entry was confirmed, and the
+  // live drill screenshotted this chip reading "Already entered on 2026-07-27T22:08:18.559Z". The
+  // review table's own duplicate notice had always sliced it to the day; this chip had not.
+  it('1b. shows the DAY, not the instant, when the ledger holds a full timestamp', () => {
+    const file = scanFile({ status: 'duplicate-excluded', postedAt: '2026-07-27T22:08:18.559Z' })
+    expect(statusChip(file)).toEqual({
+      label: 'Already entered on 2026-07-27',
+      variant: 'destructive'
+    })
+  })
+
   it('2. an already-posted duplicate with no posted date', () => {
     expect(statusChip(scanFile({ status: 'duplicate-excluded' }))).toEqual({
       label: 'Already entered',

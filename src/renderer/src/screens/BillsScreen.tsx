@@ -103,6 +103,17 @@ const STATUS_LABEL: Record<ScanFileStatus, string> = {
 }
 
 /**
+ * The calendar day out of a stored ISO instant.
+ *
+ * The ledger records the exact moment an entry was confirmed, which is the right thing to store and
+ * the wrong thing to show: "when did I send this" is a question people answer in days. A value that
+ * is already a plain date passes through unchanged, so this is safe whatever the ledger holds.
+ */
+export function postedDate(postedAt: string): string {
+  return postedAt.slice(0, 10)
+}
+
+/**
  * The row's single status chip: one label and one variant, resolved by first match.
  *
  * Order matters and is deliberate.
@@ -128,9 +139,14 @@ export function statusChip(
   parse?: ParseFileResult
 ): { label: string; variant: BadgeVariant } {
   // Rows 1 and 2: an already-posted duplicate, carrying its posted date when the ledger knows it.
+  //
+  // The DATE, not the timestamp. The ledger stores a full ISO instant, and printing it verbatim put
+  // "Already entered on 2026-07-27T22:08:18.559Z" in front of the one non-technical user this app
+  // exists for (the live drill screenshotted it). The review table's duplicate notice already
+  // sliced it the same way; this chip was the surface that did not.
   if (file.status === 'duplicate-excluded') {
     return {
-      label: file.postedAt ? `Already entered on ${file.postedAt}` : STATUS_LABEL[file.status],
+      label: file.postedAt ? `Already entered on ${postedDate(file.postedAt)}` : STATUS_LABEL[file.status],
       variant: STATUS_VARIANT[file.status]
     }
   }
