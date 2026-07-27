@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-02-PLAN.md (AI client configuration, AI-01..04); Wave 2 plans 03-03..03-06 remain unblocked and parallel
-last_updated: "2026-07-27T13:01:04.955Z"
+stopped_at: Completed 03-03-PLAN.md (deterministic validation gate + confidence scorer); Wave 2 plans 03-04..03-06 remain unblocked and parallel
+last_updated: "2026-07-27T13:19:55.386Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 18
-  completed_plans: 12
+  completed_plans: 13
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 03 (ai-client-and-parse-pipeline) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
-Progress: [███████░░░] 67% (12/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 2/7)
+Progress: [███████░░░] 72% (13/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 3/7)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [███████░░░] 67% (12/18 plans complete — Phases 
 | Phase 02 P02-03 | 9min | 3 tasks | 5 files |
 | Phase 03 P01 | 11min | 3 tasks | 9 files |
 | Phase 03 P02 | 15min | 3 tasks | 9 files |
+| Phase 03 P03-03 | 9min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Recent decisions affecting current work:
 - [Phase 03]: AI config (03-02): the API key and base URL are write-only from the renderer perspective — written via secrets.set, read ONLY in src/main/ai/client.ts, never returned across IPC, never logged, and SettingsScreen has no read path back (D-05/T-03-01). buildClient rejects any non-https or malformed base URL via new URL() before instantiating the client (T-03-05).
 - [Phase 03]: AI config (03-02): the ai IPC layer never forwards a raw error — three opaque service codes map to fixed recoverable copy and everything else falls back to one generic sentence, because OpenAI SDK errors routinely embed the request URL.
 - [Phase 03]: AI config (03-02): classifyVision runs the curated-family rung even when metadata is present but omits image, so a provider under-reporting modalities cannot strip the Vision badge off gpt-4o; a model entry failing the lenient ModelInfoSchema is skipped, never fatal to the picker.
+- [Phase 03]: Parse (03-03): the validation gate is the authority over model output — toCents returns null (never 0) for unreadable money so a total reading 'N/A' can never post as a confident zero-dollar bill, sign is captured before digit extraction (the RESEARCH impl mis-signed '-5.50' as -450), and cents are built by concatenating digit strings so dollars*100 float error never enters the pipeline.
+- [Phase 03]: Parse (03-03): confidence resolves through a five-rung ladder where a failed deterministic check outranks the model's self-report (D-11/D-12); grounding is boundary-checked so a tax of 8.00 cannot certify itself inside a total of 108.00, the suggested category is never grounded (it is a classification guess, not a transcription), and a D-22 cross-call disagreement maps to low while a failed check maps to flagged.
 
 ### Pending Todos
 
@@ -126,6 +129,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T13:01:04.950Z
-Stopped at: Completed 03-02-PLAN.md (AI client configuration, AI-01..04); Wave 2 plans 03-03..03-06 remain unblocked and parallel
+Last session: 2026-07-27T13:19:55.382Z
+Stopped at: Completed 03-03-PLAN.md (deterministic validation gate + confidence scorer); Wave 2 plans 03-04..03-06 remain unblocked and parallel
 Resume file: None
