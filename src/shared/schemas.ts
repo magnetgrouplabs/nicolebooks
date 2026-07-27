@@ -116,3 +116,143 @@ export const BillSchema = z.object({
 
 /** The inferred model-output type, so extract-fields.ts and validate.ts share one source of truth. */
 export type Bill = z.infer<typeof BillSchema>
+
+// ---------------------------------------------------------------------------
+// Finish sprint — qbo / recon / posting / upload payload schemas (SEAMS)
+//
+// TWO RULES CARRIED FORWARD, both load-bearing:
+//   1. PAYLOAD-FREE CHANNELS use z.object({}).strict() and the handler parses `raw ?? {}`, never a
+//      bare `raw`. The preload invokes those channels with NO argument, so raw is undefined and
+//      z.object({}).strict().parse(undefined) throws 'expected object, received undefined' — which
+//      is exactly the defect that shipped ingestion:scan permanently-rejecting for a whole phase.
+//      The strict gate still rejects anything smuggled in; only the undefined case is normalized.
+//   2. NO SECRET MATERIAL. No schema below carries a QuickBooks access token, refresh token, or
+//      client secret. Those live encrypted main-side and are read only where a request is signed.
+//      realmId is a company identifier, not a credential, and is never accepted FROM the renderer.
+//
+// Downstream agents own their group's schemas and may tighten these bounds. They may not rename a
+// channel, and they may not loosen a schema into z.any() or drop .strict() from a payload-free one.
+// ---------------------------------------------------------------------------
+
+/**
+ * The Phase 2 SHA-256 file hash, pinned to exactly 64 chars. This is the join key across scan,
+ * parse, recon, and posting, and it is also a parsed_results primary key, so a wrong-length value
+ * can never reach a cache or ledger lookup.
+ */
+const FileHashSchema = z.string().length(64)
+
+/**
+ * A QuickBooks entity id as it comes back from the API. Intuit returns short numeric strings, but
+ * the bound is generous because ids are opaque; what matters is that it is a non-empty, bounded
+ * string and never an object that could smuggle structure into a query builder.
+ */
+const QboIdSchema = z.string().min(1).max(64)
+
+/** ISO calendar date, 'YYYY-MM-DD'. QuickBooks rejects anything else, so reject it here first. */
+const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+
+// --- qbo: every channel in the group is payload-free -------------------------
+// The connection is resolved server-side from the encrypted token store, so there is nothing
+// legitimate for the renderer to send on any of these and the strict-empty schema rejects
+// anything it tries to (a smuggled realmId would be an attempt to redirect the company).
+
+/** qbo:status payload gate. */
+export const QboStatusSchema = z.object({}).strict()
+
+/** qbo:connect payload gate. The OAuth flow is started main-side; no renderer input is accepted. */
+export const QboConnectSchema = z.object({}).strict()
+
+/** qbo:disconnect payload gate. */
+export const QboDisconnectSchema = z.object({}).strict()
+
+/** qbo:sync-reference payload gate. */
+export const QboSyncReferenceSchema = z.object({}).strict()
+
+/** qbo:get-reference payload gate. */
+export const QboGetReferenceSchema = z.object({}).strict()
+
+// --- recon -------------------------------------------------------------------
+
+/**
+ * recon:match payload. Hashes ONLY: the parsed vendor/category text already lives in the main-side
+ * parsed_results cache, so accepting it from the renderer would let a compromised renderer steer
+ * the match against text the parser never produced. The 500 ceiling mirrors ParseBatchSchema.
+ */
+export const ReconMatchSchema = z.object({
+  fileHashes: z.array(FileHashSchema).max(500)
+})
+
+// --- posting -----------------------------------------------------------------
+
+/**
+ * One approved review row.
+ *
+ * amountCents is INTEGER cents and must be positive (RESEARCH Pitfall 4): a float would lose cents,
+ * and a zero or negative amount is a credit memo, which is not something this app posts. The
+ * ceiling is ~1 billion dollars, far above any real bill but low enough that an absurd value from a
+ * mis-parse is refused before it reaches QuickBooks.
+ *
+ * refNumber is capped at 21 characters because that is the QuickBooks DocNumber limit; catching it
+ * here turns a confusing API rejection mid-batch into an up-front validation error.
+ *
+ * NOTE for POSTING-ENGINE: the bill-vs-expense cross-field rule (a 'expense' row must name a
+ * paidFromAccountId, a 'bill' row must not) is deliberately NOT encoded here. Add it in your own
+ * module with .superRefine or .check so the refinement lives beside the code that depends on it.
+ */
+export const PostingRowSchema = z.object({
+  fileHash: FileHashSchema,
+  entryType: z.enum(['bill', 'expense']),
+  vendorId: QboIdSchema,
+  categoryAccountId: QboIdSchema,
+  paidFromAccountId: QboIdSchema.nullable(),
+  txnDate: IsoDateSchema,
+  dueDate: IsoDateSchema.nullable(),
+  refNumber: z.string().min(1).max(21).nullable(),
+  amountCents: z.number().int().positive().max(99999999999),
+  memo: z.string().max(4000).nullable()
+})
+
+/**
+ * posting:send payload. At least one row (an empty send is a UI bug, not a no-op worth a batch id)
+ * and at most 500, the same ceiling as a parse batch.
+ */
+export const PostingSendSchema = z.object({
+  rows: z.array(PostingRowSchema).min(1).max(500)
+})
+
+/** posting:batches is payload-free: the history is read server-side from the audit tables. */
+export const PostingBatchesSchema = z.object({}).strict()
+
+/** posting:batch-detail payload. The batch id is opaque and bounded, never interpolated into SQL. */
+export const PostingBatchDetailSchema = z.object({
+  batchId: z.string().min(1).max(64)
+})
+
+/**
+ * posting:undo-last is payload-free BY DESIGN: "the last batch" is resolved server-side. Letting
+ * the renderer name a batch id would turn undo into "void any batch you can name", which is a much
+ * larger destructive surface than the one-step undo the UI actually offers.
+ */
+export const PostingUndoLastSchema = z.object({}).strict()
+
+/** posting:summary payload. Same bounded opaque batch id as batch-detail. */
+export const PostingSummarySchema = z.object({
+  batchId: z.string().min(1).max(64)
+})
+
+// --- upload + ingestion:pick-files: all payload-free --------------------------
+// pick-files opens the native dialog main-side and the upload server binds main-side, so neither
+// accepts a renderer-supplied path, port, or host. That is the same path-injection guard as
+// ingestion:scan (T-02-02), extended to the two new ways documents enter the inbox.
+
+/** ingestion:pick-files payload gate. */
+export const IngestionPickFilesSchema = z.object({}).strict()
+
+/** upload:start payload gate. */
+export const UploadStartSchema = z.object({}).strict()
+
+/** upload:stop payload gate. */
+export const UploadStopSchema = z.object({}).strict()
+
+/** upload:status payload gate. */
+export const UploadStatusSchema = z.object({}).strict()

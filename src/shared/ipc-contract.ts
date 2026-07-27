@@ -39,7 +39,41 @@ export const Channels = {
   // re-parse override (D-14), and the main->renderer progress broadcast (D-26).
   parseBatch: 'parse:parse-batch',
   parseReparse: 'parse:reparse',
-  parseProgress: 'parse:progress' // main->renderer broadcast (mirrors themeChanged)
+  parseProgress: 'parse:progress', // main->renderer broadcast (mirrors themeChanged)
+  // ---------------------------------------------------------------------------
+  // Finish-sprint channel groups (SEAMS). These names are a FIXED integration contract: the
+  // downstream agents own the handler bodies in src/main/ipc/{qbo,recon,posting,upload}.ts and
+  // may refine their group's response shapes, but a channel name may never be renamed, because
+  // four modules are being written in parallel against exactly these strings.
+  // ---------------------------------------------------------------------------
+  // qbo channel group: OAuth connect/disconnect, connection status, and the QuickBooks
+  // reference-data cache (vendors, expense accounts, payment accounts, items). Tokens NEVER
+  // cross this boundary; they live in the OS keychain and are read main-side, exactly like the
+  // AI credentials (D-05/D-16).
+  qboStatus: 'qbo:status',
+  qboConnect: 'qbo:connect',
+  qboDisconnect: 'qbo:disconnect',
+  qboSyncReference: 'qbo:sync-reference',
+  qboGetReference: 'qbo:get-reference',
+  qboStatusChanged: 'qbo:status-changed', // main->renderer broadcast (mirrors themeChanged)
+  // recon channel group: reconcile parsed vendor/category text against the cached QBO reference
+  // lists. Takes file hashes only, so no parsed field values are re-sent across the boundary.
+  reconMatch: 'recon:match',
+  // posting channel group: send an approved review batch to QuickBooks, inspect prior batches,
+  // undo the last one, and render a printable per-batch report.
+  postingSend: 'posting:send',
+  postingProgress: 'posting:progress', // main->renderer broadcast (mirrors parseProgress)
+  postingBatches: 'posting:batches',
+  postingBatchDetail: 'posting:batch-detail',
+  postingUndoLast: 'posting:undo-last',
+  postingSummary: 'posting:summary',
+  // upload channel group plus ingestion:pick-files. Both feed the same managed inbox the Phase 2
+  // scan already reads, so the folder becomes an internal detail rather than the primary UX.
+  ingestionPickFiles: 'ingestion:pick-files',
+  uploadStart: 'upload:start',
+  uploadStop: 'upload:stop',
+  uploadStatus: 'upload:status',
+  uploadReceived: 'upload:received' // main->renderer broadcast (mirrors themeChanged)
 } as const
 
 /** Union of every valid channel-name string. */
@@ -120,6 +154,19 @@ export interface IngestionApi {
   resolveInbox(): Promise<{ path: string; created: boolean }>
   chooseInbox(): Promise<{ canceled: true } | { canceled: false; path: string }>
   scan(): Promise<ScanResult>
+  // Finish sprint: the native "Add files" picker. Main opens the OS open-file dialog, copies the
+  // chosen documents into the managed inbox, and reports how many landed. The renderer never sees
+  // (or sends) a filesystem path, so the T-02-02 path-injection guard is unchanged.
+  pickFiles(): Promise<PickFilesResult>
+}
+
+/**
+ * Result of ingestion:pick-files. `skipped` holds the FILE NAMES that were not copied (wrong type,
+ * unreadable, or already present), never their paths, so nothing path-shaped crosses the boundary.
+ */
+export interface PickFilesResult {
+  added: number
+  skipped: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +283,302 @@ export interface ParseApi {
   onProgress(cb: (progress: ParseProgress) => void): () => void
 }
 
+// ---------------------------------------------------------------------------
+// Finish sprint — qbo (QUICKBOOKS CONNECT)
+//
+// SECRET BOUNDARY (mirrors the AI rules above): the QuickBooks access token, refresh token and
+// client secret NEVER appear in any type below. They are stored encrypted main-side and read only
+// where a request is signed. What crosses this boundary is connection STATE plus non-secret
+// reference data (names and ids the user picks from). realmId is the company id, not a credential;
+// it identifies which QuickBooks company is connected and is safe to display.
+// ---------------------------------------------------------------------------
+
+/**
+ * Connection state as the renderer must render it. 'expired' is deliberately distinct from
+ * 'disconnected': the refresh token rolls (~100 days) and silently dropping to 'disconnected'
+ * would hide the fact that reconnecting is a one-click reauthorization, not fresh setup.
+ */
+export type QboConnectionState = 'disconnected' | 'connected' | 'expired'
+
+/** The single status object every qbo channel (and the qbo:status-changed broadcast) returns. */
+export interface QboStatus {
+  state: QboConnectionState
+  companyName: string | null // display name of the connected company, null when disconnected
+  realmId: string | null // QuickBooks company id (not a credential)
+  lastSyncAt: string | null // ISO timestamp of the last successful reference sync
+}
+
+/** One selectable QuickBooks record (a vendor or an item) as the review grid needs it. */
+export interface QboRefRecord {
+  id: string
+  name: string
+  active: boolean // inactive records stay in the cache so an existing bill still resolves its name
+}
+
+/**
+ * A chart-of-accounts entry. accountType/accountSubType are carried because they are what
+ * separates a category (expense) account from a "Paid from" (bank/credit card) account, and the
+ * review grid has to filter the two lists differently.
+ */
+export interface QboRefAccount extends QboRefRecord {
+  accountType: string
+  accountSubType: string | null
+}
+
+/** Counts written by one qbo:sync-reference run, so the UI can say what it refreshed. */
+export interface QboSyncResult {
+  vendors: number
+  expenseAccounts: number
+  paymentAccounts: number
+  items: number
+  syncedAt: string // ISO timestamp
+}
+
+/** The whole cached reference set. syncedAt is null when nothing has ever been synced. */
+export interface QboReference {
+  vendors: QboRefRecord[]
+  expenseAccounts: QboRefAccount[]
+  paymentAccounts: QboRefAccount[]
+  items: QboRefRecord[]
+  syncedAt: string | null
+}
+
+/**
+ * qbo channel group. connect kicks off the browser authorization-code flow main-side (the loopback
+ * redirect is caught by main, never by the renderer) and resolves with the resulting status, so one
+ * call both starts and reports the connection. Every method returns the SAME QboStatus shape so the
+ * renderer has exactly one status reducer. onStatusChanged subscribes to the qbo:status-changed
+ * broadcast and returns an unsubscribe function, exactly like ThemeApi.onChange.
+ */
+export interface QboApi {
+  status(): Promise<QboStatus>
+  connect(): Promise<QboStatus>
+  disconnect(): Promise<QboStatus>
+  syncReference(): Promise<QboSyncResult>
+  getReference(): Promise<QboReference>
+  onStatusChanged(cb: (status: QboStatus) => void): () => void
+}
+
+// ---------------------------------------------------------------------------
+// Finish sprint — recon (RECONCILIATION)
+// ---------------------------------------------------------------------------
+
+/**
+ * How a match was reached, which is what the review grid renders differently:
+ *   'auto'      — confident enough to pre-select and leave unhighlighted
+ *   'suggested' — pre-selected but flagged for a look
+ *   'none'      — nothing plausible; the cell starts empty and the user picks
+ */
+export type MatchConfidence = 'auto' | 'suggested' | 'none'
+
+/** One ranked alternative for a cell's dropdown. `score` is 0..1, higher is a better match. */
+export interface MatchCandidate {
+  id: string
+  name: string
+  score: number
+}
+
+/**
+ * The resolved value for one cell. selectedId/selectedName are null when confidence is 'none'.
+ * Candidates are always present so the dropdown can show the runners-up without a second call.
+ */
+export interface MatchResult {
+  selectedId: string | null
+  selectedName: string | null
+  confidence: MatchConfidence
+  candidates: MatchCandidate[]
+}
+
+/** Both reconciled cells for one document. */
+export interface FileMatch {
+  vendor: MatchResult
+  category: MatchResult
+}
+
+/** recon:match result, keyed by the Phase 2 SHA-256 file hash (the same join key as everywhere). */
+export interface ReconMatchResult {
+  matches: Record<string, FileMatch>
+}
+
+/**
+ * recon channel group. The renderer sends HASHES ONLY: the parsed vendor/category text is already
+ * in the main-side parsed_results cache, so re-sending it would duplicate the source of truth and
+ * widen the payload for nothing.
+ */
+export interface ReconApi {
+  match(fileHashes: string[]): Promise<ReconMatchResult>
+}
+
+// ---------------------------------------------------------------------------
+// Finish sprint — posting (SEND TO QUICKBOOKS)
+// ---------------------------------------------------------------------------
+
+/** Which QuickBooks entity a row becomes: a Bill (payable later) or a Purchase (already paid). */
+export type PostingEntryType = 'bill' | 'expense'
+
+/**
+ * Per-entry lifecycle. 'sent' and 'confirmed' are deliberately separate: a request can succeed at
+ * the socket and still leave us unsure the entity exists, and only a confirmed read-back may write
+ * the dedupe ledger. Collapsing them would risk double-posting after a timeout.
+ */
+export type PostingEntryState = 'pending' | 'sent' | 'confirmed' | 'failed'
+
+/**
+ * One approved review row, exactly as the user left it. Money is INTEGER CENTS end to end
+ * (RESEARCH Pitfall 4); a float here would lose cents in a financial tool. paidFromAccountId is
+ * null for 'bill' rows and required for 'expense' rows (a Purchase must name what paid it) — that
+ * cross-field rule is enforced by the posting group's schema, not by the type.
+ */
+export interface PostingRow {
+  fileHash: string
+  entryType: PostingEntryType
+  vendorId: string
+  categoryAccountId: string
+  paidFromAccountId: string | null
+  txnDate: string // ISO 'YYYY-MM-DD'
+  dueDate: string | null // ISO 'YYYY-MM-DD'; bills only
+  refNumber: string | null // QuickBooks DocNumber
+  amountCents: number
+  memo: string | null
+}
+
+/** posting:send result. The batch id is the handle for progress, detail, undo, and the report. */
+export interface PostingSendResult {
+  batchId: string
+}
+
+/** Payload of the posting:progress broadcast — the "sending N/M" surface. */
+export interface PostingProgress {
+  batchId: string
+  done: number
+  total: number
+  current: { fileHash: string; state: PostingEntryState } | null
+}
+
+/** One row of the batch history list. */
+export interface PostingBatchSummaryRow {
+  batchId: string
+  createdAt: string // ISO timestamp
+  total: number
+  confirmed: number
+  failed: number
+}
+
+/** posting:batches result. Newest first. */
+export interface PostingBatchesResult {
+  batches: PostingBatchSummaryRow[]
+}
+
+/**
+ * One entry inside a batch. syncToken is QuickBooks' optimistic-concurrency token and is what a
+ * void/undo needs alongside the id, so it is recorded at post time rather than re-fetched later.
+ * `error` is always recoverable, human-readable copy, never a raw API body or a stack.
+ */
+export interface PostingBatchEntry {
+  fileHash: string
+  entryType: PostingEntryType
+  qboId: string | null
+  syncToken: string | null
+  state: PostingEntryState
+  error: string | null
+}
+
+/** posting:batch-detail result. */
+export interface PostingBatchDetail {
+  entries: PostingBatchEntry[]
+}
+
+/**
+ * posting:undo-last result. batchId is null when there is nothing to undo. Per-entity results are
+ * returned rather than a single boolean because a partial undo is a real outcome the user must
+ * see: some entities void cleanly, others are already paid or already deleted in QuickBooks.
+ */
+export interface PostingUndoResult {
+  batchId: string | null
+  results: Array<{ qboId: string; undone: boolean; reason: string | null }>
+}
+
+/** One printable line of a batch report. Names are denormalized so the report renders offline. */
+export interface PostingSummaryLine {
+  fileHash: string
+  filename: string
+  vendorName: string
+  categoryName: string
+  entryType: PostingEntryType
+  txnDate: string
+  refNumber: string | null
+  amountCents: number
+  state: PostingEntryState
+  qboId: string | null
+  error: string | null
+}
+
+/**
+ * posting:summary result: everything a printable "what did I just send" report needs, resolved
+ * main-side so the renderer never has to re-join ids against the reference cache to print.
+ */
+export interface PostingSummary {
+  batchId: string
+  createdAt: string
+  companyName: string | null
+  totals: { entries: number; confirmed: number; failed: number; amountCents: number }
+  lines: PostingSummaryLine[]
+}
+
+/**
+ * posting channel group. send hands over the approved rows and returns immediately with a batch id;
+ * per-entry outcomes arrive on the posting:progress broadcast and are readable afterwards through
+ * batchDetail, so a closed window never loses a batch. onProgress returns an unsubscribe function,
+ * exactly like ParseApi.onProgress.
+ */
+export interface PostingApi {
+  send(rows: PostingRow[]): Promise<PostingSendResult>
+  batches(): Promise<PostingBatchesResult>
+  batchDetail(batchId: string): Promise<PostingBatchDetail>
+  undoLast(): Promise<PostingUndoResult>
+  summary(batchId: string): Promise<PostingSummary>
+  onProgress(cb: (progress: PostingProgress) => void): () => void
+}
+
+// ---------------------------------------------------------------------------
+// Finish sprint — upload (PHONE UPLOAD OVER THE LAN)
+// ---------------------------------------------------------------------------
+
+/** upload:start result. qrDataUrl is a self-contained data: URI, so the renderer fetches nothing. */
+export interface UploadStartResult {
+  url: string
+  qrDataUrl: string
+}
+
+/** upload:stop result. */
+export interface UploadStopResult {
+  stopped: boolean
+}
+
+/** upload:status result. url is null while the server is not running. */
+export interface UploadStatusResult {
+  running: boolean
+  url: string | null
+  receivedCount: number
+}
+
+/** Payload of the upload:received broadcast. File NAMES only, never paths (T-02-02). */
+export interface UploadReceived {
+  filenames: string[]
+}
+
+/**
+ * upload channel group. The LAN-only HTTP server runs entirely in main; the renderer only starts
+ * and stops it and renders the pairing URL plus its QR code. onReceived subscribes to the
+ * upload:received broadcast and returns an unsubscribe function, exactly like ThemeApi.onChange.
+ */
+export interface UploadApi {
+  start(): Promise<UploadStartResult>
+  stop(): Promise<UploadStopResult>
+  status(): Promise<UploadStatusResult>
+  onReceived(cb: (received: UploadReceived) => void): () => void
+}
+
 /**
  * The complete typed surface exposed to the renderer as window.api. The preload builds
  * a concrete object conforming to this interface and re-exports its type as Api, and the
@@ -249,4 +592,8 @@ export interface Api {
   ingestion: IngestionApi
   ai: AiApi
   parse: ParseApi
+  qbo: QboApi
+  recon: ReconApi
+  posting: PostingApi
+  upload: UploadApi
 }
