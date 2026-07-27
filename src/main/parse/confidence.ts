@@ -178,6 +178,13 @@ function isGrounded(key: keyof ParsedFields, value: string | number, haystack: s
       // vendor, not a transcription of anything printed, so a coincidental substring hit
       // ("Fuel" inside "Fuel Surcharge") must not certify it. This is precisely the field the
       // advisory self-report exists for (D-11).
+      //
+      // The prompt now asks for this field as an explicit INFERENCE from the vendor and the line
+      // items rather than as a transcription, which makes this rule MORE load-bearing, not less:
+      // an inferred phrase is drawn from the same vocabulary the document prints, so it will hit
+      // the source text far more often than a read value would, and every one of those hits would
+      // be a coincidence dressed up as evidence. The rung stays exactly where it was: the advisory
+      // self-report, else 'low'. Pinned in test/parse-confidence.test.ts.
       return false
     case 'subtotalCents':
     case 'taxCents':

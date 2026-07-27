@@ -14,6 +14,7 @@
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "postinstall": "npm run rebuild",
     "test:unit": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test": "vitest run && playwright test",

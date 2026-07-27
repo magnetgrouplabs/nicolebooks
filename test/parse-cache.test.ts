@@ -270,6 +270,20 @@ describe('hash-alone keying (D-14 / RESEARCH Pitfall 7)', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM parsed_results').get()).toEqual({ n: 2 })
   })
 
+  it('does NOT serve a row written under version 1, the transcription-only prompt contract', () => {
+    // Version 1 asked the model to READ suggested_category off the page, which no bill prints, so
+    // every version-1 row carries a null category the current prompt would have inferred. Serving
+    // one would hand the user a blank cell the app can now answer. The literal 1 is pinned rather
+    // than expressed as SCHEMA_VERSION - 1 so a future bump cannot quietly re-admit these rows.
+    expect(SCHEMA_VERSION).toBeGreaterThan(1)
+    putCached(db, makeRow())
+    db.prepare('UPDATE parsed_results SET schema_version = 1 WHERE file_hash = ?').run(HASH_A)
+
+    expect(getCached(db, HASH_A)).toBeNull()
+    // Still on disk: raw_response keeps its D-24 audit value and is overwritten by the re-parse.
+    expect(rawRow(HASH_A)).toBeDefined()
+  })
+
   it('does NOT serve a row written under an older schema_version (D-24 forced re-parse)', () => {
     // A model switch alone must never invalidate (above). A deliberate prompt/schema bump
     // must, so the gate lives in the cache and no call site can forget it.

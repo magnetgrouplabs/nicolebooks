@@ -38,8 +38,17 @@ import type { ParseRoute } from './route'
  * when a change to the prompt (D-23) or the bill schema makes previously cached fields
  * untrustworthy; every existing row then reads as a miss and is re-parsed once. A MODEL change
  * is deliberately NOT a reason to bump (D-14).
+ *
+ * History:
+ *   1  the original transcription-only prompt. suggested_category was read off the page, so it
+ *      came back null on every bill (no bill prints one) and every review row needed its category
+ *      picked by hand.
+ *   2  suggested_category became an INFERENCE from the vendor and the line items (prompt.ts's
+ *      CATEGORY_INSTRUCTION). Rows written under version 1 hold a null category that the current
+ *      contract would have filled, so serving one would hand the user a blank cell the app can now
+ *      answer. They stay on disk for their D-24 audit value and are re-parsed once on next scan.
  */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 /** What putCached accepts. `db` is injectable so tests drive a temp DB with no Electron. */
 export interface CacheRowInput {

@@ -111,6 +111,42 @@ describe('computeConfidence — grounding', () => {
     expect(computeConfidence(fields(), SOURCE_TEXT, []).suggestedCategory).toBe('low')
   })
 
+  // The prompt now asks for suggested_category as an INFERENCE from the vendor and the line items
+  // rather than as a transcription (prompt.ts's CATEGORY_INSTRUCTION). That makes this rule MORE
+  // load-bearing, not less: an inferred phrase is drawn from the same vocabulary the document
+  // prints, so it will collide with the source text far more often than a read value ever did, and
+  // every one of those collisions would be a coincidence dressed up as evidence. The rung must not
+  // move.
+  describe('an inferred category still cannot certify itself', () => {
+    it.each([
+      ['plumbing supplies', 'PLUMBING SUPPLIES\n1/2 in. Copper Pipe'],
+      ['fuel', 'No. 2 Heating Oil\nFuel surcharge 45.00'],
+      ['office supplies', 'PINNACLE OFFICE SUPPLIES\nCOPY PAPER 8.5X11'],
+      ['auto parts', 'NORTHSIDE AUTO PARTS\nOIL FILTER PF63'],
+      ['landscaping materials', 'CEDAR LANE LANDSCAPING\nLANDSCAPE FABRIC 3X50']
+    ])('leaves "%s" at low even though the document prints those very words', (phrase, text) => {
+      const c = computeConfidence(fields({ suggestedCategory: phrase }), `${SOURCE_TEXT}\n${text}`, [])
+      expect(c.suggestedCategory).toBe('low')
+      expect(c.suggestedCategory).not.toBe('high')
+    })
+
+    it('still reports the advisory self-report when the model supplied one (rung 4, unchanged)', () => {
+      const c = computeConfidence(
+        fields({ suggestedCategory: 'plumbing supplies' }),
+        `${SOURCE_TEXT}\nPLUMBING SUPPLIES`,
+        [],
+        { suggestedCategory: 'high' }
+      )
+      expect(c.suggestedCategory).toBe('high')
+    })
+
+    it('grades nothing at all when the model answered null (D-09 stays intact)', () => {
+      // "no basis at all" is still a legitimate answer, and an empty cell must not be badged.
+      const c = computeConfidence(fields({ suggestedCategory: null }), SOURCE_TEXT, [])
+      expect(c.suggestedCategory).toBeUndefined()
+    })
+  })
+
   it('grades every non-null field and omits the ones with nothing to grade', () => {
     const c = computeConfidence(fields({ dueDate: null }), SOURCE_TEXT, [])
     expect(c.dueDate).toBeUndefined()

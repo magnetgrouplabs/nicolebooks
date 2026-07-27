@@ -343,6 +343,52 @@ describe('validateBill — coercion into ParsedFields', () => {
     )
   })
 
+  // The prompt asks for suggested_category as an INFERENCE from the vendor and the line items, so
+  // the gate now sees short bookkeeper phrases where it used to see null. It must treat them like
+  // any other optional string: trim, keep, never interpret. The matcher, not this module, decides
+  // whether a phrase means anything to the connected company.
+  describe('an inferred category phrase', () => {
+    it.each([
+      'plumbing supplies',
+      'fuel',
+      'office supplies',
+      'landscaping materials',
+      'auto parts',
+      'electrical supplies'
+    ])('keeps "%s" verbatim, with no interpretation', (phrase) => {
+      const { fields, validationFlags } = validateBill(
+        bill({ suggested_category: phrase, total: '108.00' })
+      )
+      expect(fields.suggestedCategory).toBe(phrase)
+      // Inferring a category is not a deterministic check and can never fail one.
+      expect(validationFlags).toEqual([])
+    })
+
+    it('trims surrounding whitespace, like every other optional string', () => {
+      const { fields } = validateBill(
+        bill({ suggested_category: '  plumbing supplies  ', total: '108.00' })
+      )
+      expect(fields.suggestedCategory).toBe('plumbing supplies')
+    })
+
+    it('still reads the absence vocabulary as an absence, not as a category', () => {
+      // Unchanged by the inference wording: a model that writes "none" instead of returning null
+      // must not put the word "none" in the category cell and rank it against the chart of accounts.
+      for (const word of ['null', 'None', '(none)', 'N/A', 'not specified', 'unknown']) {
+        const { fields } = validateBill(bill({ suggested_category: word, total: '108.00' }))
+        expect(fields.suggestedCategory).toBeNull()
+      }
+    })
+
+    it('still accepts a genuine null (D-09), with no flag', () => {
+      const { fields, validationFlags } = validateBill(
+        bill({ suggested_category: null, total: '108.00' })
+      )
+      expect(fields.suggestedCategory).toBeNull()
+      expect(validationFlags).toEqual([])
+    })
+  })
+
   it('flags an unparseable date, keeps the rest of the bill, and never throws', () => {
     const run = (): ReturnType<typeof validateBill> =>
       validateBill(bill({ invoice_date: 'sometime last week', total: '108.00' }))

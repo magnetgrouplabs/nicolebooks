@@ -43,6 +43,7 @@ import {
 } from './helpers/fake-openai-client'
 import {
   BILL_SYSTEM_PROMPT,
+  CATEGORY_INSTRUCTION,
   EXTRACT_INSTRUCTION,
   NO_TRANSCRIPTION_MARKER,
   PLAIN_JSON_INSTRUCTION,
@@ -135,6 +136,138 @@ describe('BILL_SYSTEM_PROMPT — the D-23 guardrails, verbatim', () => {
     // integer cents / ISO lives locally in validate.ts (D-23, RESEARCH Pitfall 4).
     expect(BILL_SYSTEM_PROMPT).toMatch(/exactly as printed/i)
     expect(BILL_SYSTEM_PROMPT).toMatch(/do not reformat/i)
+  })
+})
+
+// =======================================================================================
+// 1b. suggested_category, the ONE inferred field (the live-drill gap)
+// =======================================================================================
+//
+// The drill returned a null category on all nine fixtures, because the prompt asked the model to
+// TRANSCRIBE a field that no bill prints. Every review row therefore needed its category picked by
+// hand, which was the largest remaining piece of manual work in the flow. These specs pin the fix
+// and, just as importantly, pin its blast radius: the exception is scoped to one field by name, so
+// the never-invent rule still governs the vendor, the amounts, the dates and the invoice number.
+
+describe('the suggested_category inference instruction', () => {
+  it('carves ONE named exception out of the never-invent rule, and names the field', () => {
+    // Scoped by name in the system message itself. A vague "use your judgement" would license
+    // an invented invoice number, which is a fabricated audit record in somebody's books.
+    expect(BILL_SYSTEM_PROMPT).toContain('suggested_category')
+    expect(BILL_SYSTEM_PROMPT).toMatch(/exactly one exception/i)
+    expect(BILL_SYSTEM_PROMPT).toMatch(/infer/i)
+    // The transcription discipline for everything else is restated, not withdrawn.
+    expect(BILL_SYSTEM_PROMPT).toMatch(/never invent/i)
+    expect(BILL_SYSTEM_PROMPT).toMatch(/every other field stays a transcription/i)
+  })
+
+  it('asks for a SHORT bookkeeper phrase inferred from the vendor and the line items', () => {
+    expect(CATEGORY_INSTRUCTION).toMatch(/infer/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/vendor/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/line items/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/one to three plain words/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/bookkeeper/i)
+  })
+
+  it('asks for the standard account wording, not the goods', () => {
+    // The single highest-value clause, and the one the live revalidation is built on. The phrase
+    // is a QUERY the matcher ranks against the company's real accounts, and a trade qualifier is
+    // what costs the match: measured against the sandbox chart of accounts, "plumbing supplies"
+    // reaches its best account at 0.61 and "auto parts" at 0.59, both under the 0.62 suggest
+    // floor, while "job materials" and "automobile" score 1.0.
+    expect(CATEGORY_INSTRUCTION).toMatch(/standard category, not the goods/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/no trade or product qualifier/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/chart of accounts/i)
+  })
+
+  it('anchors the vocabulary with QuickBooks default account wordings, not one company list', () => {
+    // These eight are QuickBooks' own default expense accounts, in essentially every company file.
+    // They steer the REGISTER without teaching the model to guess at an account list it cannot see.
+    for (const example of [
+      'fuel',
+      'supplies',
+      'utilities',
+      'repairs and maintenance',
+      'travel',
+      'insurance',
+      'advertising',
+      'equipment rental'
+    ]) {
+      expect(CATEGORY_INSTRUCTION).toContain(example)
+    }
+  })
+
+  it('forbids the three phrases that look filled in and match nothing', () => {
+    expect(CATEGORY_INSTRUCTION).toMatch(/do not copy a line item/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/product code/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/vendor name/i)
+  })
+
+  it('keeps the field genuinely nullable (D-09): null when there is no basis at all', () => {
+    expect(CATEGORY_INSTRUCTION).toMatch(/null for suggested_category only when/i)
+    expect(CATEGORY_INSTRUCTION).toMatch(/no basis at all/i)
+  })
+
+  it('rides in the TEXT block of every user message, before the images', () => {
+    const parts = buildUserContent({ referenceText: null, imageDataUrls: [page(1)] })
+    expect(parts[2]).toEqual({ type: 'text', text: CATEGORY_INSTRUCTION })
+    const kinds = parts.map((p) => p.type)
+    expect(kinds.lastIndexOf('text')).toBeLessThan(kinds.indexOf('image_url'))
+  })
+
+  it('reaches the wire on every ladder rung AND on the repair re-ask', async () => {
+    // A fallback that dropped the instruction would answer with the old transcription-only
+    // behaviour on exactly the endpoints least able to follow a schema.
+    const client = makeFakeClient({
+      chatImpl: (args, index) => {
+        const rf = args.response_format as { type?: string } | undefined
+        if (rf?.type === 'json_schema') throw unsupported('json_schema')
+        if (index === 1) return makeTextResponse('{"vendor":"Acme"}') // forces the repair re-ask
+        return makeTextResponse(JSON.stringify(MINIMAL_BILL))
+      }
+    })
+    const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+
+    expect(result.ok).toBe(true)
+    expect(client.chatCalls().length).toBeGreaterThanOrEqual(3)
+    for (const call of client.chatCalls()) {
+      expect(userText(call.args)).toContain(CATEGORY_INSTRUCTION)
+      expect(systemText(call.args)).toBe(BILL_SYSTEM_PROMPT)
+    }
+  })
+})
+
+describe('extractFields — an inferred category survives the local gate', () => {
+  it('accepts a short inferred phrase that appears nowhere on the document', async () => {
+    // The whole point: BillSchema types suggested_category as a nullable string, so an inferred
+    // phrase is as valid as a read one. Nothing in the gate compares it to the page.
+    const client = makeFakeClient({
+      parsedObject: { ...MINIMAL_BILL, suggested_category: 'plumbing supplies' }
+    })
+    const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.bill.suggested_category).toBe('plumbing supplies')
+    expect(result.repaired).toBe(false)
+    expect(client.chatCalls()).toHaveLength(1) // no repair round trip was paid for
+  })
+
+  it('still accepts null, on every rung, with no repair round trip', async () => {
+    // A blank or unreadable receipt must still be allowed to answer nothing (D-09).
+    for (const startRung of ['json_schema', 'json_object', 'plain'] as const) {
+      const client = makeFakeClient({ chatResponse: makeTextResponse(JSON.stringify(MINIMAL_BILL)) })
+      const result = await extractFields({
+        model: MODEL,
+        imageDataUrls: [page(1)],
+        startRung,
+        client
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.bill.suggested_category).toBeNull()
+      expect(client.chatCalls()).toHaveLength(1)
+    }
   })
 })
 

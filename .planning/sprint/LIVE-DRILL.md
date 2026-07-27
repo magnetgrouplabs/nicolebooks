@@ -72,7 +72,7 @@ books. The row therefore parses, displays, and is excluded by the user, and the 
 says what it still needs. Supporting it properly means a Vendor Credit entity, which is a
 feature, not a fix.
 
-### Category reconciliation never fires on this corpus
+### Category reconciliation never fires on this corpus (CLOSED, see below)
 Every document above came back with category tier "none". The cause is upstream of the
 matcher: the model returns suggested_category as null for these fixtures, because none of the
 nine documents PRINTS a category, and the prompt correctly asks for null when a field is
@@ -81,6 +81,34 @@ category picked by hand, which is the single biggest piece of remaining manual w
 flow. Closing it means asking the model to INFER a category from the line items rather than to
 read one off the page, which is a prompt change with its own accuracy question and belongs to
 whoever owns the parse prompt.
+
+### Category inference, revalidated live (2026-07-27)
+suggested_category is now asked for as an inference from the vendor and the line items
+(src/main/parse/prompt.ts, CATEGORY_INSTRUCTION), and parse SCHEMA_VERSION moved 1 to 2 so
+every row cached under the transcription prompt re-parses once on the next scan. Four fixtures
+spanning both routes were re-run through the real extraction path against gpt-4o-mini, and the
+phrase each returned was ranked offline against the sandbox's own 44 expense accounts:
+
+| Document | Route | Inferred phrase | Recon resolution | Tier | Score |
+| --- | --- | --- | --- | --- | --- |
+| apex-plumbing-supply-invoice-APX-84213.pdf | native text PDF | job materials | Job Expenses:Job Materials | auto | 1.00 |
+| metro-fuel-oil-corp-invoice-MF-2026-0714.pdf | native text PDF | fuel | Automobile:Fuel | auto | 1.00 |
+| northside-auto-parts-receipt.jpg | raster receipt photo | automobile | Automobile | auto | 1.00 |
+| brightline-electric-supply-scan-BE-5731.pdf | image-only scan PDF | supplies | Supplies | auto | 1.00 |
+
+Four of four, all at the auto tier. Three land on the account the manifest hints at; the
+electrical scan lands on Supplies where the manifest hints Job Materials, which is a defensible
+second reading of the same bill and is exactly the call the review grid asks a person to
+confirm.
+
+The wording is what earns those scores, and the first live run proved it: asked for a
+merchandise-flavoured phrase the model answered well and matched badly ("plumbing supplies"
+0.61, "auto parts" 0.59, "electrical supplies" 0.57, all under the 0.62 suggest floor, so four
+correct readings still produced three empty cells). Asking for the standard chart-of-accounts
+wording instead, with no trade or product qualifier, moved every one of them to 1.00. Nothing
+in src/main/recon/ was touched.
+
+Re-run it with: LIVE_AI=1 npm run test:live (see live/parse-category.live.test.ts).
 
 ### Vendor reconciliation is exactly on target
 Six exact names matched at the auto tier with no marker, two near misses matched at the
