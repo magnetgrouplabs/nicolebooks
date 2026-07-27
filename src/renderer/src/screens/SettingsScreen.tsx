@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 
+import { ipcErrorMessage } from '../lib/ipc-error'
 import { HealthIndicator } from '../components/HealthIndicator'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -294,7 +295,7 @@ export function SettingsScreen(): React.JSX.Element {
       // The main handler already mapped this to fixed, recoverable copy; it never carries raw
       // error text, a host, or a realm id.
       setQboNotice(null)
-      setQboError(err instanceof Error ? err.message : 'Could not connect to QuickBooks.')
+      setQboError(ipcErrorMessage(err) || 'Could not connect to QuickBooks.')
     } finally {
       setQboBusy(null)
     }
@@ -309,7 +310,7 @@ export function SettingsScreen(): React.JSX.Element {
       setQboStatus(status)
       setQboNotice('Disconnected. Your QuickBooks keys are still saved on this machine.')
     } catch (err) {
-      setQboError(err instanceof Error ? err.message : 'Could not disconnect from QuickBooks.')
+      setQboError(ipcErrorMessage(err) || 'Could not disconnect from QuickBooks.')
     } finally {
       setQboBusy(null)
     }
@@ -324,7 +325,7 @@ export function SettingsScreen(): React.JSX.Element {
       setQboNotice(qboSyncSummary(result))
       setQboStatus(await window.api.qbo.status())
     } catch (err) {
-      setQboError(err instanceof Error ? err.message : 'Could not read your QuickBooks lists.')
+      setQboError(ipcErrorMessage(err) || 'Could not read your QuickBooks lists.')
     } finally {
       setQboBusy(null)
     }

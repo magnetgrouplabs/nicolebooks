@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { Separator } from '@/components/ui/separator'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { formatCents } from '@/lib/money'
 import { ParsedFieldList, flaggedFields } from './parsed-fields'
 import {
@@ -174,7 +175,9 @@ export async function runVendorCreate(
   try {
     record = await io.createVendor(displayName)
   } catch (err) {
-    const message = err instanceof Error ? err.message.trim() : ''
+    // Unwrapped: Electron rejects an invoke with its own error, whose message puts the channel name
+    // and the word Error in front of the sentence main mapped.
+    const message = ipcErrorMessage(err)
     io.fail(message === '' ? VENDOR_CREATE_FALLBACK : message)
     return
   }

@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { History, Printer } from 'lucide-react'
 
+import { ipcErrorMessage } from '../lib/ipc-error'
 import { EmptyState } from '../components/EmptyState'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -429,11 +430,10 @@ export function HistoryScreen(): React.JSX.Element {
       if (result.batchId !== null) await selectBatch(result.batchId)
     } catch (err) {
       // Main already mapped this to a recoverable sentence; anything else falls back to one here.
-      setUndoError(
-        err instanceof Error && err.message.length > 0
-          ? err.message
-          : 'Could not undo that batch just now. Please try again.'
-      )
+      // Unwrapped first, because Electron rejects an invoke with its own error whose message puts
+      // the channel name and the word Error in front of whatever main said.
+      const message = ipcErrorMessage(err)
+      setUndoError(message.length > 0 ? message : 'Could not undo that batch just now. Please try again.')
     } finally {
       setUndoing(false)
     }
