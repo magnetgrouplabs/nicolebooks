@@ -42,64 +42,42 @@
 // The folder path is still displayed, because a user who wants to drag files in should not have to
 // hunt for it, but it is no longer the instruction.
 //
+// Review (Phase 6, REVIEW-01..09): once documents are scanned and read, the editable review surface
+// renders BELOW the scan list, fed by the same files and parse results. It is its own component
+// (src/renderer/src/review/ReviewTable.tsx) because it owns a second, larger concern (what will be
+// sent) and this screen already owns two (getting documents in, and reading them). The parsed-field
+// display and the flag attribution moved to review/parsed-fields.tsx, because BOTH surfaces render
+// them now; they are re-exported here so the specs that import them from this module still do.
+//
 // The renderer performs zero direct fs/db access — every privileged operation runs main-side
 // behind the ingestion IPC group. All colors are semantic theme classes (no hardcoded hex).
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { FilePlus, Receipt, Smartphone } from 'lucide-react'
 
 import { EmptyState } from '../components/EmptyState'
+import type { Destination } from '../components/Sidebar'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
+import { ReviewTable } from '../review/ReviewTable'
+import { ParsedFieldList, flaggedFields, isFlagged } from '../review/parsed-fields'
 import type {
   ParseBatchFile,
   ParseFileResult,
   ParseProgress,
-  ParsedFields,
   PickFilesResult,
   ScanFile,
   ScanFileStatus,
   ScanResult
 } from '@shared/ipc-contract'
 
+// Re-exported, not re-implemented: test/bills-row-status.test.ts and test/bills-parse-flags.test.ts
+// both import these from this module, and the rule they pin (WR-10: a displayed money value never
+// appears without its flag) is the same rule wherever the implementation lives.
+export { flaggedFields, isFlagged }
+
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive'
-
-/** Every field the row can display, in ParsedFields declaration order. */
-const FIELD_ORDER = [
-  'vendor',
-  'invoiceNumber',
-  'invoiceDate',
-  'dueDate',
-  'subtotalCents',
-  'taxCents',
-  'totalCents',
-  'currency',
-  'suggestedCategory'
-] as const satisfies readonly (keyof ParsedFields)[]
-
-type ParsedFieldKey = (typeof FIELD_ORDER)[number]
-
-const FIELD_LABEL: Record<ParsedFieldKey, string> = {
-  vendor: 'Vendor',
-  invoiceNumber: 'Invoice number',
-  invoiceDate: 'Invoice date',
-  dueDate: 'Due date',
-  subtotalCents: 'Subtotal',
-  taxCents: 'Tax',
-  totalCents: 'Total',
-  currency: 'Currency',
-  suggestedCategory: 'Suggested category'
-}
-
-/** Membership test for "is this string the name of a field this build knows how to display?" */
-const KNOWN_FIELDS: ReadonlySet<string> = new Set<string>(FIELD_ORDER)
-
-/**
- * The three fields an unattributable flag condemns together, mirroring the same constant in
- * src/main/parse/confidence.ts. Any one of the three could be the wrong number.
- */
-const MONEY_FIELDS = ['subtotalCents', 'taxCents', 'totalCents'] as const
 
 // File-status labels and variants, read by rows 1 to 5 of statusChip's precedence table.
 // Unsupported is a quiet outline. A caught already-posted file reads destructive so it stands out;
@@ -122,120 +100,6 @@ const STATUS_LABEL: Record<ScanFileStatus, string> = {
   'duplicate-in-batch': 'Duplicate in this scan',
   'not-ready-skipped': 'Not downloaded yet, re-scan shortly',
   'unsupported-skipped': 'Unsupported'
-}
-
-/**
- * Render integer cents as printed money. String math only, never cents / 100: this value came
- * from the deterministic gate as an exact integer and a float round trip is how it stops being one.
- */
-function formatCents(cents: number): string {
-  const negative = cents < 0
-  const digits = Math.abs(cents).toString().padStart(3, '0')
-  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `${negative ? '-' : ''}$${whole}.${digits.slice(-2)}`
-}
-
-/**
- * The text to print for one parsed field, or null when the field should be omitted entirely.
- *
- * Omit a null field, EXCEPT when it carries a flag, mirroring what computeConfidence already
- * decided main-side: it drops ungradeable nulls "so Phase 6 does not badge an empty cell" but
- * deliberately keeps a FLAGGED field "even when its value is null, because the flag itself is the
- * thing to show". A cash receipt with no tax line legitimately has taxCents: null and printing
- * "Tax: not found" on every such row is blank noise; but money:taxCents fires only when the
- * document HAD a tax value and it was unreadable, and hiding that row would hide a failed check.
- *
- * vendor and totalCents are the two required fields and are always printed. A total that is not a
- * number (only reachable through a degraded cache blob) prints Not found rather than $0.00,
- * because a confident zero-dollar bill is the precise failure D-12 and WR-10 exist to prevent.
- */
-function fieldValue(fields: ParsedFields, field: ParsedFieldKey, flagged: boolean): string | null {
-  const value = fields[field]
-  if (field === 'vendor') {
-    const vendor = typeof value === 'string' ? value.trim() : ''
-    return vendor === '' ? 'Not found' : vendor
-  }
-  if (field === 'totalCents') {
-    return typeof value === 'number' ? formatCents(value) : 'Not found'
-  }
-  if (value === null || value === undefined) return flagged ? 'Not found' : null
-  if (field === 'subtotalCents' || field === 'taxCents') {
-    return typeof value === 'number' ? formatCents(value) : 'Not found'
-  }
-  // invoiceDate / dueDate print the stored ISO string verbatim: reformatting a date is a display
-  // decision and this task is structure only.
-  return String(value)
-}
-
-/**
- * Did the deterministic gate flag anything about this row?
- *
- * This is what makes D-12's "flag-and-keep" actually kept AND flagged. validate.ts is explicit
- * that an unreadable total is recorded as 0 "but only ever alongside its flag, which is what
- * makes the fallback visible instead of silent" — so a row that renders the VALUE without the
- * flag turns the case that module is proudest of catching (a total reading "N/A" must never
- * become a confident $0.00) into a normal, successfully parsed $0.00 bill on screen.
- *
- * The rich per-field flagging UI is Phase 6 (D-18) and this is deliberately not that. It is the
- * minimum that makes displaying a value honest: if any check failed, say so next to the number.
- */
-export function isFlagged(parse?: ParseFileResult): boolean {
-  if (!parse) return false
-  if ((parse.validationFlags?.length ?? 0) > 0) return true
-  return Object.values(parse.confidence ?? {}).some((level) => level === 'flagged')
-}
-
-/**
- * WHICH displayed fields carry a failed deterministic check. The per-field half of isFlagged.
- *
- * Three sources, unioned, plus one backstop:
- *   1. a `confidence` entry of 'flagged' under a known field name  -> that field
- *   2. a `validationFlags` entry shaped `prefix:field` whose suffix is a known field name
- *      -> that field (this includes the D-22 `agreement:` flags, which the renderer keeps
- *      treating as flagged even though the main process grades them 'low')
- *   3. ANYTHING ELSE                                               -> UNATTRIBUTED
- *   4. if anything was UNATTRIBUTED, every one of MONEY_FIELDS is flagged
- *
- * Rule 4 is the load-bearing line. ARITHMETIC_FLAG is literally the string
- * 'arithmetic:subtotal+tax!=total', and the part after its colon is NOT a ParsedFields key --
- * confidence.ts special-cases that flag and condemns all three money fields together. A naive
- * `split(':')` mapping here would therefore drop the arithmetic cross-check silently, which is
- * precisely the WR-10 failure ("a displayed money value must never appear without its flag")
- * wearing a per-field costume. Rule 4 handles it correctly by construction, without importing
- * anything from src/main across the process boundary, and it makes every future flag string this
- * build does not recognize degrade toward showing MORE review markers rather than fewer.
- *
- * The consequence worth stating: totalCents is ALWAYS displayed, so rule 4 guarantees that a
- * non-empty flag set always produces at least one visible marker. That, plus the property
- * `isFlagged(parse) === (flaggedFields(parse).size > 0)` pinned in test/bills-row-status.test.ts,
- * is what keeps WR-10 true for every input shape rather than only the ones anticipated here.
- */
-export function flaggedFields(parse?: ParseFileResult): Set<string> {
-  const flagged = new Set<string>()
-  if (!parse) return flagged
-  let unattributed = false
-
-  for (const [key, level] of Object.entries(parse.confidence ?? {})) {
-    if (level !== 'flagged') continue
-    if (KNOWN_FIELDS.has(key)) flagged.add(key)
-    else unattributed = true
-  }
-
-  for (const flag of parse.validationFlags ?? []) {
-    // A cached row's flag list is rehydrated from JSON, so a degraded blob could hand back a
-    // non-string. Count it rather than skip it: dropping it is the one outcome WR-10 forbids.
-    if (typeof flag !== 'string') {
-      unattributed = true
-      continue
-    }
-    const separator = flag.indexOf(':')
-    const field = separator < 0 ? '' : flag.slice(separator + 1)
-    if (separator >= 0 && KNOWN_FIELDS.has(field)) flagged.add(field)
-    else unattributed = true
-  }
-
-  if (unattributed) for (const key of MONEY_FIELDS) flagged.add(key)
-  return flagged
 }
 
 /**
@@ -353,30 +217,8 @@ export function ScanRow({
         <span className="font-mono text-sm text-card-foreground">{file.filename}</span>
         {/* A definition list is the right semantics for label/value pairs, and it is what turns
             an unreadable "Nassau Plumbing Supply $1,336.00" into data the user can actually
-            check field by field. */}
-        {fields && (
-          <dl className="flex flex-wrap gap-x-4 gap-y-0.5">
-            {FIELD_ORDER.map((field) => {
-              const flagged = flags.has(field)
-              const value = fieldValue(fields, field, flagged)
-              if (value === null) return null
-              return (
-                <div key={field} className="flex gap-1.5">
-                  <dt className="font-sans text-sm text-muted-foreground">{FIELD_LABEL[field]}</dt>
-                  <dd
-                    className={
-                      flagged
-                        ? 'font-sans text-sm text-destructive'
-                        : 'font-sans text-sm text-card-foreground'
-                    }
-                  >
-                    {flagged ? `${value} (needs review)` : value}
-                  </dd>
-                </div>
-              )
-            })}
-          </dl>
-        )}
+            check field by field. The same list is rendered inside every review row. */}
+        {fields && <ParsedFieldList fields={fields} flags={flags} />}
         {/* A truncated read presenting a confident total is the same class of silent-confidence
             problem WR-10 exists to prevent, so say it out loud (D-21). */}
         {parse?.truncated && (
@@ -604,7 +446,33 @@ export function PhoneUploadPanel({
   )
 }
 
-export function BillsScreen(): React.JSX.Element {
+/**
+ * Which scanned files belong in the review table.
+ *
+ * Loaded files, plus any already-entered duplicate the user deliberately included. A
+ * duplicate-in-batch file is NEVER here: it is a byte-identical copy of a file that is already in
+ * the list, so a row for it would be a second row for the same document, and the whole-batch check
+ * at send time would refuse both.
+ *
+ * Exported so the rule is pinned by a spec rather than by reading the JSX.
+ */
+export function reviewableFiles(
+  result: ScanResult | null,
+  includedOverrides: ReadonlySet<string>
+): ScanFile[] {
+  if (!result) return []
+  return result.files.filter((file) => {
+    if (file.status === 'loaded') return true
+    return file.status === 'duplicate-excluded' && includedOverrides.has(fileKey(file))
+  })
+}
+
+export function BillsScreen({
+  onNavigate
+}: {
+  /** Lets the post-send strip point at the History screen, where the receipt lives. */
+  onNavigate?: (destination: Destination) => void
+} = {}): React.JSX.Element {
   const [inboxPath, setInboxPath] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
@@ -842,6 +710,16 @@ export function BillsScreen(): React.JSX.Element {
   // The batch is the loaded files plus any duplicate-excluded files the user included anyway.
   const batchCount = loadedFiles.length + includedOverrides.size
 
+  // The same set, as the review table needs it. Memoized because it is the prop the table re-seeds
+  // its rows from: a fresh array identity on every render would re-seed on every keystroke. The
+  // user's edits would survive that (they are a separate overlay, keyed by file hash, which is the
+  // whole point of the three-layer model), but re-running recon and the duplicate probes for every
+  // character typed is real work for no change in what is on screen.
+  const reviewFiles = useMemo(
+    () => reviewableFiles(result, includedOverrides),
+    [result, includedOverrides]
+  )
+
   // A one-line parse tally once a batch settles. 'cached' is called out separately because it is
   // the visible proof of PARSE-05: those files cost nothing to re-scan.
   const parsedRows = Object.values(parseResults)
@@ -971,23 +849,36 @@ export function BillsScreen(): React.JSX.Element {
             />
           )}
 
-          {loadedFiles.length > 0 && (
+          {/* WHILE THE MODEL IS STILL READING, the plain scan rows are the honest surface: there
+              are no parse results yet, so a review row would show a dozen empty fields and tell the
+              user each one still needs something. The moment the batch settles, the same documents
+              are re-rendered as the editable review table below. */}
+          {parsing && loadedFiles.length > 0 && (
             <ul className="flex flex-col gap-2">
-              {loadedFiles.map((file) => {
-                const parse = file.hash ? parseResults[file.hash] : undefined
-                return (
-                  <ScanRow
-                    key={file.filename}
-                    file={file}
-                    parse={parse}
-                    retrying={file.hash ? retrying.has(file.hash) : false}
-                    onRetry={
-                      parse?.status === 'parse-failed' ? () => void retryParse(file) : undefined
-                    }
-                  />
-                )
-              })}
+              {loadedFiles.map((file) => (
+                <ScanRow
+                  key={file.filename}
+                  file={file}
+                  parse={file.hash ? parseResults[file.hash] : undefined}
+                />
+              ))}
             </ul>
+          )}
+
+          {/* THE REVIEW SURFACE (Phase 6). Everything the app guessed, beside a control that
+              changes it, above one button that says exactly what it will do. */}
+          {!parsing && reviewFiles.length > 0 && (
+            <ReviewTable
+              files={reviewFiles}
+              batchEntryDate={result.batchEntryDate}
+              parseResults={parseResults}
+              retrying={retrying}
+              onRetry={(fileHash) => {
+                const file = reviewFiles.find((candidate) => candidate.hash === fileHash)
+                if (file) void retryParse(file)
+              }}
+              onOpenHistory={onNavigate ? () => onNavigate('history') : undefined}
+            />
           )}
 
           {duplicateFiles.length > 0 && (
