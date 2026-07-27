@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md (deterministic validation gate + confidence scorer); Wave 2 plans 03-04..03-06 remain unblocked and parallel
-last_updated: "2026-07-27T13:19:55.386Z"
+stopped_at: Completed 03-04-PLAN.md (D-20 routing gate, PDF text/render, photo prep); Wave 2 plans 03-05 and 03-06 remain unblocked
+last_updated: "2026-07-27T13:43:45.351Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 18
-  completed_plans: 13
+  completed_plans: 14
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-22)
 ## Current Position
 
 Phase: 03 (ai-client-and-parse-pipeline) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
-Progress: [███████░░░] 72% (13/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 3/7)
+Progress: [████████░░] 78% (14/18 plans complete — Phases 01+02 done bar the 01-08 cross-OS human gate; Phase 03 at 4/7)
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [███████░░░] 72% (13/18 plans complete — Phases 
 | Phase 03 P01 | 11min | 3 tasks | 9 files |
 | Phase 03 P02 | 15min | 3 tasks | 9 files |
 | Phase 03 P03-03 | 9min | 2 tasks | 4 files |
+| Phase 03 P03-04 | 18min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Recent decisions affecting current work:
 - [Phase 03]: AI config (03-02): classifyVision runs the curated-family rung even when metadata is present but omits image, so a provider under-reporting modalities cannot strip the Vision badge off gpt-4o; a model entry failing the lenient ModelInfoSchema is skipped, never fatal to the picker.
 - [Phase 03]: Parse (03-03): the validation gate is the authority over model output — toCents returns null (never 0) for unreadable money so a total reading 'N/A' can never post as a confident zero-dollar bill, sign is captured before digit extraction (the RESEARCH impl mis-signed '-5.50' as -450), and cents are built by concatenating digit strings so dollars*100 float error never enters the pipeline.
 - [Phase 03]: Parse (03-03): confidence resolves through a five-rung ladder where a failed deterministic check outranks the model's self-report (D-11/D-12); grounding is boundary-checked so a tax of 8.00 cannot certify itself inside a total of 108.00, the suggested category is never grounded (it is a classification guess, not a transcription), and a D-22 cross-call disagreement maps to low while a failed check maps to flagged.
+- [Phase 03]: Parse (03-04): routing branches on SOURCE TYPE before content — a raw photo goes to prepImage (heic-convert then sharp) while an image-only PDF goes to renderPdfPageImage (pdfjs legacy build + @napi-rs/canvas), because sharp cannot decode PDF bytes and collapsing the two image-only cases would make every scanned bill unparseable (D-07/D-19).
+- [Phase 03]: Parse (03-04): the D-20 gate evaluates the two 'this is really a picture' rungs FIRST (bitmap coverage >= 0.75, then invisible-glyph ratio > 0.90) so a bitmap page carrying an OCR overlay never reaches the text rung; char count is a soft tiebreaker that also requires an embedded font, and a malformed signal coerces to 0 so a broken loader degrades toward image-only rather than pairing junk text.
+- [Phase 03]: Parse (03-04): unpdf 1.6.2 renamed configureUnPDF to definePDFJSModule (deprecated, removed in v2) and pdfjs 6 dropped PDFDocumentProxy.destroy() for doc.loadingTask.destroy(); unpdf's renderPageAsImage emits PNG, so the JPEG re-encode uses @napi-rs/canvas rather than sharp to keep the PDF path provably sharp-free.
 
 ### Pending Todos
 
@@ -129,6 +133,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T13:19:55.382Z
-Stopped at: Completed 03-03-PLAN.md (deterministic validation gate + confidence scorer); Wave 2 plans 03-04..03-06 remain unblocked and parallel
+Last session: 2026-07-27T13:43:05.043Z
+Stopped at: Completed 03-04-PLAN.md (D-20 routing gate, PDF text/render, photo prep); Wave 2 plans 03-05 and 03-06 remain unblocked
 Resume file: None
