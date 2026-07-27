@@ -24,6 +24,12 @@
 // connection (realm id + access token, refreshing as needed) and returns
 // createHttpQboApi({ baseUrl, realmId, getAccessToken }). No other file needs to change.
 //
+// baseUrl MUST come from qboApiHost() in src/main/qbo/environment.ts, called INSIDE the provider
+// rather than once when the provider is built. It resolves the sandbox or production host from the
+// stored environment setting, so a provider that reads it per call follows a later switch and a
+// provider that captured it at startup would keep posting to whichever host the app happened to
+// start on. There is no constant to hardcode here.
+//
 // SECRETS. No token is stored, cached, or logged here. getAccessToken() is called per request so
 // a refresh between two entries of one batch is picked up without the client holding a stale
 // value, and the token never lands in a field somebody might serialize.
@@ -115,8 +121,9 @@ export async function resolveQboApi(): Promise<QboApi> {
 /**
  * Everything the HTTP client needs, injected.
  *
- * baseUrl is the environment seam Phase 8 flips: 'https://sandbox-quickbooks.api.intuit.com' now,
- * 'https://quickbooks.api.intuit.com' at production cutover, with no change to any posting logic.
+ * baseUrl is the environment seam: 'https://sandbox-quickbooks.api.intuit.com' or
+ * 'https://quickbooks.api.intuit.com', resolved from the stored setting by qboApiHost() in
+ * src/main/qbo/environment.ts, with no change to any posting logic between the two.
  */
 export interface HttpQboConfig {
   baseUrl: string

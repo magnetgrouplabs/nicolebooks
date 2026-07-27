@@ -18,6 +18,7 @@
 //              claims data the grid does not have.
 
 import type {
+  QboEnvironment,
   QboReference,
   QboStatus,
   QboSyncResult
@@ -33,6 +34,11 @@ import {
   setLastSyncAt,
   type ConnectionDeps
 } from './connection'
+import {
+  getQboEnvironment,
+  setQboEnvironment,
+  type EnvironmentDeps
+} from './environment'
 import { QBO_NOT_CONNECTED } from './errors'
 import { connectToQuickBooks, type OAuthDeps } from './oauth'
 import {
@@ -44,10 +50,49 @@ import {
 import { clearTokenSet } from './tokens'
 
 /** Every injectable dependency the QuickBooks operations take. */
-export interface QboServiceDeps extends OAuthDeps, SyncReferenceDeps, ConnectionDeps {}
+export interface QboServiceDeps
+  extends OAuthDeps,
+    SyncReferenceDeps,
+    ConnectionDeps,
+    EnvironmentDeps {}
+
+/**
+ * Resolve the environment ONCE per operation and hand it to every module underneath.
+ *
+ * This is what makes the seam honest. oauth, tokens, client and reference all accept an optional
+ * `environment` and fall back to sandbox when it is absent, which is the right default for a unit
+ * spec and the wrong one for a running app. Injecting the stored value here means the fallback is
+ * never what production actually uses, and it means a single operation cannot straddle a switch:
+ * the value is read once, so a connect that started in sandbox exchanges its code against sandbox
+ * even if the setting changed while the browser was open.
+ */
+function scoped(deps: QboServiceDeps): QboServiceDeps {
+  return { ...deps, environment: deps.environment ?? getQboEnvironment(deps) }
+}
 
 /** The current connection status, computed from what is actually stored. */
 export function readStatus(deps: QboServiceDeps = {}): QboStatus {
+  return getStatus(deps)
+}
+
+/** Which Intuit environment the app is pointed at. */
+export function getEnvironment(deps: QboServiceDeps = {}): QboEnvironment {
+  return getQboEnvironment(deps)
+}
+
+/**
+ * Point the app at the sandbox or at a live QuickBooks company.
+ *
+ * A real change disconnects (see environment.ts for why a carried-over token set is worse than no
+ * token set). The realm-scoped reference cache is deliberately left in place: its rows are keyed by
+ * realm id, so they can never be served for a different company, and keeping them means switching
+ * back does not force a re-sync.
+ */
+export function setEnvironment(
+  environment: QboEnvironment,
+  deps: QboServiceDeps = {}
+): QboStatus {
+  setQboEnvironment(environment, deps)
   return getStatus(deps)
 }
 
@@ -61,7 +106,8 @@ export function readStatus(deps: QboServiceDeps = {}): QboStatus {
  * The company name is best effort. A CompanyInfo read that fails must not undo a sign in the user
  * just completed, so the connection is recorded either way and the card falls back to the realm id.
  */
-export async function connect(deps: QboServiceDeps = {}): Promise<QboStatus> {
+export async function connect(rawDeps: QboServiceDeps = {}): Promise<QboStatus> {
+  const deps = scoped(rawDeps)
   const previousRealmId = getRealmId(deps)
   const { realmId } = await connectToQuickBooks(deps)
 
@@ -94,7 +140,8 @@ export function disconnect(deps: QboServiceDeps = {}): QboStatus {
 }
 
 /** Pull the company's reference lists into the cache and record when it happened. */
-export async function syncReference(deps: QboServiceDeps = {}): Promise<QboSyncResult> {
+export async function syncReference(rawDeps: QboServiceDeps = {}): Promise<QboSyncResult> {
+  const deps = scoped(rawDeps)
   const realmId = getRealmId(deps)
   if (!realmId) throw new Error(QBO_NOT_CONNECTED)
 

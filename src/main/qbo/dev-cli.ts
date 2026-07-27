@@ -29,6 +29,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fetchCompanyName } from './client'
 import { getRealmId, getStatus, markConnected, setLastSyncAt } from './connection'
+import { getQboEnvironment } from './environment'
 import { syncReference } from './reference'
 import {
   clearTokenSet,
@@ -235,6 +236,7 @@ function commandStatus(): void {
   process.stdout.write(
     [
       'dev-qbo-status',
+      `  environment    ${getQboEnvironment()}`,
       `  state          ${status.state}`,
       `  company        ${status.companyName ?? '(unknown)'}`,
       `  realm id       ${status.realmId ?? '(none)'}`,
@@ -259,17 +261,22 @@ async function commandProbe(ctx: DevContext): Promise<void> {
   const before = readTokenSet()
   if (!before) throw new Error('Nothing is connected. Run --dev-seed-qbo first.')
 
+  // Read the stored environment ONCE and pass it to every call below, exactly like the service
+  // layer does. Letting each call fall back to the module default would make this probe report
+  // sandbox health for a connection that is actually pointed at a live company.
+  const environment = getQboEnvironment()
+
   const willRefresh = needsRefresh(before, Date.now())
-  const tokens = willRefresh ? await refreshTokenSet() : before
+  const tokens = willRefresh ? await refreshTokenSet({ environment }) : before
   const rotated = tokens.refreshToken !== before.refreshToken
 
   const realmId = getRealmId()
   if (!realmId) throw new Error('No realm id is stored. Run --dev-seed-qbo first.')
 
-  const companyName = await fetchCompanyName(realmId)
+  const companyName = await fetchCompanyName(realmId, { environment })
   if (companyName) markConnected({ realmId, companyName })
 
-  const result = await syncReference(realmId)
+  const result = await syncReference(realmId, { environment })
   setLastSyncAt(result.syncedAt)
 
   // Rotation protocol: the file is stale the moment a refresh succeeds, so it is updated here and
@@ -278,7 +285,8 @@ async function commandProbe(ctx: DevContext): Promise<void> {
 
   process.stdout.write(
     [
-      'dev-qbo-probe: live sandbox verification',
+      'dev-qbo-probe: live verification',
+      `  environment      ${environment}`,
       `  refreshed        ${willRefresh ? 'yes' : 'no (access token still fresh)'}`,
       `  token rotated    ${rotated ? 'yes, written back to qbo-tokens.json' : 'no'}`,
       `  refresh token    ${redact(tokens.refreshToken)}`,
