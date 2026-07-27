@@ -25,7 +25,7 @@
 // The renderer performs zero direct fs/db access — every privileged operation runs main-side
 // behind the ingestion IPC group. All colors are semantic theme classes (no hardcoded hex).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Receipt } from 'lucide-react'
 
@@ -91,11 +91,29 @@ function formatCents(cents: number): string {
 }
 
 /** The one-line read-only summary of a parsed bill. The editable table is Phase 6. */
-function parsedSummary(parse: ParseFileResult): string | null {
+export function parsedSummary(parse: ParseFileResult): string | null {
   if (!parse.fields) return null
   const vendor = parse.fields.vendor.trim()
   const total = formatCents(parse.fields.totalCents)
   return vendor === '' ? total : `${vendor} ${total}`
+}
+
+/**
+ * Did the deterministic gate flag anything about this row?
+ *
+ * This is what makes D-12's "flag-and-keep" actually kept AND flagged. validate.ts is explicit
+ * that an unreadable total is recorded as 0 "but only ever alongside its flag, which is what
+ * makes the fallback visible instead of silent" — so a row that renders the VALUE without the
+ * flag turns the case that module is proudest of catching (a total reading "N/A" must never
+ * become a confident $0.00) into a normal, successfully parsed $0.00 bill on screen.
+ *
+ * The rich per-field flagging UI is Phase 6 (D-18) and this is deliberately not that. It is the
+ * minimum that makes displaying a value honest: if any check failed, say so next to the number.
+ */
+export function isFlagged(parse?: ParseFileResult): boolean {
+  if (!parse) return false
+  if ((parse.validationFlags?.length ?? 0) > 0) return true
+  return Object.values(parse.confidence ?? {}).some((level) => level === 'flagged')
 }
 
 /**
@@ -134,7 +152,7 @@ function summaryLine(result: ScanResult): string {
   return `${total} ${noun}: ${parts.join(', ')}`
 }
 
-function ScanRow({
+export function ScanRow({
   file,
   included,
   onToggleInclude,
@@ -155,12 +173,25 @@ function ScanRow({
     isExcluded && file.postedAt ? `Already entered on ${file.postedAt}` : STATUS_LABEL[file.status]
   const summary = parse && parse.status !== 'parse-failed' ? parsedSummary(parse) : null
   const canRetry = parse?.status === 'parse-failed' && onRetry !== undefined
+  // A displayed amount always travels with its flag. Displaying the value alone is worse than
+  // displaying neither, because it reads as a clean, confident parse.
+  const flagged = summary !== null && isFlagged(parse)
 
   return (
     <li className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="font-mono text-sm text-card-foreground">{file.filename}</span>
-        {summary && <span className="font-sans text-sm text-muted-foreground">{summary}</span>}
+        {summary && (
+          <span
+            className={
+              flagged
+                ? 'font-sans text-sm text-destructive'
+                : 'font-sans text-sm text-muted-foreground'
+            }
+          >
+            {flagged ? `${summary} (needs review)` : summary}
+          </span>
+        )}
         {/* Visibility over silence: a failed row always says WHY, never just turns red. */}
         {parse?.status === 'parse-failed' && parse.error && (
           <span className="font-sans text-sm text-destructive">{parse.error}</span>
@@ -174,6 +205,7 @@ function ScanRow({
             {PARSE_STATUS_LABEL[parse.status]}
           </Badge>
         )}
+        {flagged && <Badge variant="destructive">Needs review</Badge>}
         {isExcluded && onToggleInclude && (
           <Button variant="ghost" size="sm" onClick={onToggleInclude}>
             {included ? 'Remove from batch' : 'Include anyway'}
@@ -186,6 +218,35 @@ function ScanRow({
         )}
       </div>
     </li>
+  )
+}
+
+/**
+ * The "Scan now" control.
+ *
+ * Disabled while a PARSE is running, not only while a scan is (WR-07). runScan fires
+ * `void runParse(loaded)` without awaiting it and its finally immediately clears `scanning`, so a
+ * guard on `scanning` alone let a second click start a second, concurrent parse:parse-batch:
+ * the second run's setParseResults({}) wiped the first batch's rows, the first batch's finally
+ * cleared the "parsing N of M" indicator while the second was still going, and both batches
+ * missed the cache for the same in-flight documents and paid the model twice — the exact
+ * double-charge PARSE-05 exists to prevent.
+ *
+ * Its own component so the disabled rule is provable without a DOM.
+ */
+export function ScanButton({
+  scanning,
+  parsing,
+  onScan
+}: {
+  scanning: boolean
+  parsing: boolean
+  onScan: () => void
+}): React.JSX.Element {
+  return (
+    <Button variant="default" disabled={scanning || parsing} onClick={onScan}>
+      {scanning ? 'Scanning...' : parsing ? 'Reading bills...' : 'Scan now'}
+    </Button>
   )
 }
 
@@ -203,6 +264,8 @@ export function BillsScreen(): React.JSX.Element {
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState<Set<string>>(new Set())
+  // Guards runParse against re-entry; see the note in runParse.
+  const parsingRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -265,6 +328,12 @@ export function BillsScreen(): React.JSX.Element {
   }
 
   async function runParse(files: ParseBatchFile[]): Promise<void> {
+    // Second line of defence behind the disabled button (WR-07). The button is the control the
+    // user sees; this ref is what makes a second batch impossible even if a future caller (a
+    // keyboard shortcut, a retry-all control) forgets to check. A ref, not state, because the
+    // check has to see the current value synchronously rather than a render-scoped snapshot.
+    if (parsingRef.current) return
+    parsingRef.current = true
     setParsing(true)
     setParseError(null)
     try {
@@ -281,6 +350,7 @@ export function BillsScreen(): React.JSX.Element {
         'Could not read your bills with the AI model. Check your AI settings on the Settings screen, then scan again.'
       )
     } finally {
+      parsingRef.current = false
       setParsing(false)
       setParseProgress(null)
     }
@@ -362,9 +432,7 @@ export function BillsScreen(): React.JSX.Element {
             {inboxPath ?? 'Locating your inbox folder...'}
           </p>
         </div>
-        <Button variant="default" disabled={scanning} onClick={() => void runScan()}>
-          {scanning ? 'Scanning...' : 'Scan now'}
-        </Button>
+        <ScanButton scanning={scanning} parsing={parsing} onScan={() => void runScan()} />
       </div>
 
       {scanError && (
