@@ -129,10 +129,15 @@ describe('the error copy table', () => {
     }
   })
 
+  // "Pick it from the list" joined the vocabulary with qbo:create-vendor. A duplicate name is the
+  // one failure in this table whose fix is NOT to retry: the vendor the user wanted already exists,
+  // so the next action is to choose it, and telling them to try again would be a loop.
   it('tells the person what to do next in every entry', () => {
     for (const [code, copy] of Object.entries(QBO_ERROR_COPY)) {
       if (code === 'NOT_IMPLEMENTED') continue
-      expect(copy, `copy for ${code}`).toMatch(/try again|Reconnect|Settings|Sync now|Connect/i)
+      expect(copy, `copy for ${code}`).toMatch(
+        /try again|Reconnect|Settings|Sync now|Connect|Pick it from the list/i
+      )
     }
   })
 })

@@ -103,7 +103,10 @@ vi.mock('../src/main/qbo/service', () => ({
     items: [],
     syncedAt: null
   }),
-  markConnectionExpired: (): void => {}
+  markConnectionExpired: (): void => {},
+  // E2E-INTEGRATION's one added channel. Mocked like the rest of the service layer: what this file
+  // asserts is that the sender gate and the payload gate run first, not what QuickBooks does.
+  createVendor: async (displayName: string) => ({ id: '77', name: displayName, active: true })
 }))
 
 /**
@@ -198,6 +201,9 @@ describe('every finish-sprint channel is registered', () => {
     Channels.qboDisconnect,
     Channels.qboSyncReference,
     Channels.qboGetReference,
+    // Added by E2E-INTEGRATION (Fable granted the one new channel). The count assertion below is
+    // what makes a channel that lands without this line go red.
+    Channels.qboCreateVendor,
     Channels.reconMatch,
     Channels.postingSend,
     Channels.postingBatches,
@@ -283,6 +289,37 @@ describe('implemented qbo channels keep both halves of the payload gate', () => 
     // A smuggled realmId would be an attempt to point the app at a different company.
     const err = await rejection(channel, { realmId: '9341457604445280', force: true })
     expect(err).toBeTruthy()
+  })
+})
+
+// qbo:create-vendor is the one channel in this group that CARRIES a payload, so it is the one that
+// has to prove the opposite half: a bare parse of a real payload, and a gate that refuses the empty
+// and oversized cases before any QuickBooks write is attempted.
+describe('qbo:create-vendor payload gate', () => {
+  it('accepts a well-formed display name', async () => {
+    await expect(
+      handlerFor(Channels.qboCreateVendor)(FAKE_EVENT, { displayName: 'Quality Craft Tools LLC' })
+    ).resolves.toEqual({ id: '77', name: 'Quality Craft Tools LLC', active: true })
+  })
+
+  it('trims before it measures, so the service never sees surrounding whitespace', async () => {
+    await expect(
+      handlerFor(Channels.qboCreateVendor)(FAKE_EVENT, { displayName: '  Quality Craft Tools LLC  ' })
+    ).resolves.toEqual({ id: '77', name: 'Quality Craft Tools LLC', active: true })
+  })
+
+  it.each([
+    ['a missing payload', undefined],
+    ['an empty object', {}],
+    ['an empty name', { displayName: '' }],
+    ['a whitespace-only name', { displayName: '   ' }],
+    ['a name over the QuickBooks 100 character limit', { displayName: 'x'.repeat(101) }],
+    ['a non-string name', { displayName: 42 }],
+    ['a bare string instead of the wrapper', 'Quality Craft Tools LLC']
+  ])('rejects %s at the gate', async (_label, raw) => {
+    const err = await rejection(Channels.qboCreateVendor, raw)
+    expect(err).toBeTruthy()
+    expect(gatePassed(err)).toBe(false)
   })
 })
 

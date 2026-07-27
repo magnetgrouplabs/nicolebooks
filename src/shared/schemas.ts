@@ -171,6 +171,19 @@ export const QboSyncReferenceSchema = z.object({}).strict()
 /** qbo:get-reference payload gate. */
 export const QboGetReferenceSchema = z.object({}).strict()
 
+/**
+ * qbo:create-vendor payload. The ONE qbo channel that carries renderer input, because the name of a
+ * vendor that does not exist yet cannot come from anywhere else.
+ *
+ * Trimmed BEFORE the length checks, so a field holding only spaces is refused rather than sent to
+ * QuickBooks as an empty DisplayName. The 100-character ceiling is Intuit's own DisplayName limit:
+ * catching it here turns a mid-click API rejection into an up-front validation error. The value is
+ * sent as a JSON string field, never interpolated into a URL or a query statement.
+ */
+export const QboCreateVendorSchema = z.object({
+  displayName: z.string().trim().min(1).max(100)
+})
+
 // --- recon -------------------------------------------------------------------
 
 /**

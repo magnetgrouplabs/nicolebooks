@@ -55,6 +55,11 @@ export const Channels = {
   qboDisconnect: 'qbo:disconnect',
   qboSyncReference: 'qbo:sync-reference',
   qboGetReference: 'qbo:get-reference',
+  // Added by E2E-INTEGRATION: the review screen's "Add new vendor" affordance, the one QuickBooks
+  // WRITE outside posting. It exists because a document can name a supplier the company has never
+  // billed with, and reconciliation is forbidden from creating one on its own (RECON-03). It fires
+  // only from an explicit click on the row that needs it.
+  qboCreateVendor: 'qbo:create-vendor',
   qboStatusChanged: 'qbo:status-changed', // main->renderer broadcast (mirrors themeChanged)
   // recon channel group: reconcile parsed vendor/category text against the cached QBO reference
   // lists. Takes file hashes only, so no parsed field values are re-sent across the boundary.
@@ -370,6 +375,14 @@ export interface QboApi {
   disconnect(): Promise<QboStatus>
   syncReference(): Promise<QboSyncResult>
   getReference(): Promise<QboReference>
+  /**
+   * Create one vendor in the connected company and return the record QuickBooks assigned.
+   *
+   * The returned record is already in the local reference cache, so the caller can select it
+   * immediately without waiting for a full sync. A name that already exists rejects with copy that
+   * says to pick the existing vendor instead, because that is the actual fix.
+   */
+  createVendor(displayName: string): Promise<QboRefRecord>
   onStatusChanged(cb: (status: QboStatus) => void): () => void
 }
 

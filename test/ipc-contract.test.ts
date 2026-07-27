@@ -142,6 +142,8 @@ describe('Channels are stable strings', () => {
       qboDisconnect: 'qbo:disconnect',
       qboSyncReference: 'qbo:sync-reference',
       qboGetReference: 'qbo:get-reference',
+      // Added by E2E-INTEGRATION: the review screen's explicit "Add new vendor" write.
+      qboCreateVendor: 'qbo:create-vendor',
       qboStatusChanged: 'qbo:status-changed',
       reconMatch: 'recon:match',
       postingSend: 'posting:send',

@@ -76,8 +76,12 @@ test('the renderer is isolated: no Node reach, only window.api, malformed payloa
     // Finish sprint (SEAMS): the four new groups are likewise named methods only. Handler bodies
     // land later; the bridge surface is pinned here so a downstream agent cannot widen it into a
     // generic invoke, and so a group that quietly loses a method fails at merge.
+    // createVendor is E2E-INTEGRATION's one added method: the explicit "Add new vendor" write the
+    // review screen offers on a row whose supplier is not in the company yet. It is named, like
+    // every other method here, so the group is still not a generic invoke.
     expect(apiShape.qbo).toEqual([
       'connect',
+      'createVendor',
       'disconnect',
       'getReference',
       'onStatusChanged',
