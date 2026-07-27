@@ -38,6 +38,8 @@ import {
   putCached,
   type CacheRowInput
 } from '../src/main/parse/cache'
+import { parseBatch } from '../src/main/parse/pipeline'
+import { makeFakeClient } from './helpers/fake-openai-client'
 import type { FieldConfidence, ParsedFields } from '../src/shared/ipc-contract'
 
 let dir: string
@@ -313,5 +315,184 @@ describe('every value is bound, never interpolated (threat T-03-06)', () => {
     putCached(db, makeRow({ fields: { ...FIELDS, vendor } }))
     expect(getCached(db, HASH_A)?.fields.vendor).toBe(vendor)
     expect(db.prepare('SELECT COUNT(*) AS n FROM parsed_results').get()).toEqual({ n: 1 })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The PARSE-05 behavioral half (added by plan 03-07): the storage layer above proves the row
+// round-trips; THIS block proves the pipeline actually consults it FIRST, so the paid model is
+// never called twice for the same bytes. That is the requirement in one sentence.
+// ---------------------------------------------------------------------------
+
+describe('cache-hit no-recall at the pipeline level (PARSE-05 / D-13/D-14)', () => {
+  /** A file entry whose hash matches the seeded row. */
+  const CACHED_FILE = {
+    filename: 'nassau-plumbing-0417.pdf',
+    hash: HASH_A,
+    batchEntryDate: '2026-07-27'
+  }
+
+  it('returns the seeded row as "cached" and NEVER calls the model', async () => {
+    putCached(db, makeRow())
+
+    // Both collaborators are booby-trapped: the client rejects every call and the byte reader
+    // throws. A cache hit must reach neither, which is what makes this a no-recall proof rather
+    // than a "the answer happened to match" one.
+    const client = makeFakeClient({
+      chatError: new Error('the model must never be called on a cache hit')
+    })
+
+    const result = await parseBatch([CACHED_FILE], {
+      db,
+      client,
+      model: 'fake-vision-model',
+      readFile: async () => {
+        throw new Error('bytes must never be read on a cache hit')
+      }
+    })
+
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0].status).toBe('cached')
+    expect(result.files[0].fields).toEqual(FIELDS)
+    expect(result.summary).toEqual({ total: 1, parsed: 0, failed: 0, cached: 1 })
+
+    expect(client.calls).toEqual([])
+    expect(client.neverCalled()).toBe(true)
+  })
+
+  it('returns the stored confidence, flags and truncated flag on the hit', async () => {
+    putCached(db, makeRow({ pageCount: 14, truncated: true }))
+    const client = makeFakeClient({ chatError: new Error('must not be called') })
+
+    const result = await parseBatch([CACHED_FILE], {
+      db,
+      client,
+      model: 'fake-vision-model',
+      readFile: async () => {
+        throw new Error('must not be read')
+      }
+    })
+
+    expect(result.files[0].confidence).toEqual({
+      vendor: 'high',
+      invoiceNumber: 'low',
+      totalCents: 'high',
+      taxCents: 'flagged'
+    })
+    expect(result.files[0].validationFlags).toEqual(['arithmetic:subtotal+tax!=total'])
+    expect(result.files[0].truncated).toBe(true)
+    expect(client.neverCalled()).toBe(true)
+  })
+
+  it('treats a stale schema_version row as a miss and parses it again', async () => {
+    // getCached returns null for a row that EXISTS when the prompt/schema contract moved on.
+    // The pipeline must read that as "parse it", never as "the file is unknown".
+    putCached(db, makeRow())
+    db.prepare('UPDATE parsed_results SET schema_version = ? WHERE file_hash = ?').run(
+      SCHEMA_VERSION - 1,
+      HASH_A
+    )
+
+    const client = makeFakeClient({
+      parsedObject: {
+        vendor: 'Nassau Plumbing Supply',
+        invoice_number: null,
+        invoice_date: null,
+        due_date: null,
+        subtotal: null,
+        tax: null,
+        total: '1,336.00',
+        currency: null,
+        suggested_category: null
+      }
+    })
+
+    const result = await parseBatch([CACHED_FILE], {
+      db,
+      client,
+      model: 'fake-vision-model',
+      baseUrl: 'https://api.openai.com/v1',
+      now: () => '2026-07-28T09:00:00.000Z',
+      readFile: async () => Buffer.from('bytes'),
+      routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
+      extractPdfText: async () => ({ totalPages: 1, text: ['Total $1,336.00'] }),
+      renderPdfPageImage: async () => Buffer.from('page')
+    })
+
+    expect(result.files[0].status).toBe('parsed')
+    expect(client.callCount()).toBe(1)
+    // The row is rewritten at the current SCHEMA_VERSION, so the NEXT run hits the cache again.
+    expect(getCached(db, HASH_A)?.parsedAt).toBe('2026-07-28T09:00:00.000Z')
+  })
+
+  it('bypasses the cache when the explicit re-parse override is set (D-14)', async () => {
+    putCached(db, makeRow())
+    const client = makeFakeClient({
+      parsedObject: {
+        vendor: 'Corner Hardware',
+        invoice_number: null,
+        invoice_date: null,
+        due_date: null,
+        subtotal: null,
+        tax: null,
+        total: '47.99',
+        currency: null,
+        suggested_category: null
+      }
+    })
+
+    const result = await parseBatch([CACHED_FILE], {
+      db,
+      client,
+      force: true,
+      model: 'fake-vision-model',
+      now: () => '2026-07-28T10:00:00.000Z',
+      readFile: async () => Buffer.from('bytes'),
+      routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
+      extractPdfText: async () => ({ totalPages: 1, text: ['Total $47.99'] }),
+      renderPdfPageImage: async () => Buffer.from('page')
+    })
+
+    expect(result.files[0].status).toBe('parsed')
+    expect(result.files[0].fields?.totalCents).toBe(4799)
+    expect(client.callCount()).toBe(1)
+    // The override upserts over the existing row rather than adding a second one.
+    expect(db.prepare('SELECT COUNT(*) AS n FROM parsed_results').get()).toEqual({ n: 1 })
+    expect(getCached(db, HASH_A)?.fields.vendor).toBe('Corner Hardware')
+  })
+
+  it('mixes cached and freshly parsed files in one batch, calling the model only for the new one', async () => {
+    putCached(db, makeRow()) // HASH_A is already parsed; HASH_B is not
+    const client = makeFakeClient({
+      parsedObject: {
+        vendor: 'Corner Hardware',
+        invoice_number: null,
+        invoice_date: null,
+        due_date: null,
+        subtotal: null,
+        tax: null,
+        total: '47.99',
+        currency: null,
+        suggested_category: null
+      }
+    })
+
+    const result = await parseBatch(
+      [CACHED_FILE, { filename: 'corner-hardware.pdf', hash: HASH_B, batchEntryDate: '2026-07-27' }],
+      {
+        db,
+        client,
+        model: 'fake-vision-model',
+        now: () => '2026-07-27T16:00:00.000Z',
+        readFile: async () => Buffer.from('bytes'),
+        routeFile: async () => ({ route: 'native', pageCount: 1, pages: [] }),
+        extractPdfText: async () => ({ totalPages: 1, text: ['Total $47.99'] }),
+        renderPdfPageImage: async () => Buffer.from('page')
+      }
+    )
+
+    expect(result.files.map((f) => f.status)).toEqual(['cached', 'parsed'])
+    expect(result.summary).toEqual({ total: 2, parsed: 1, failed: 0, cached: 1 })
+    expect(client.callCount()).toBe(1) // exactly one paid call, for the one uncached file
   })
 })
