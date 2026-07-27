@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: verifying
 stopped_at: Completed 03-07-PLAN.md (Phase 03 code complete, 7/7 plans)
-last_updated: "2026-07-27T15:43:11.700Z"
+last_updated: "2026-07-27T17:59:30.000Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 8
@@ -121,6 +121,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Parse cache (03-06): parsed_results is keyed on file_hash ALONE with ON CONFLICT(file_hash) upsert — storing a different model updates the one row (proven by COUNT(*)=1 across a model switch), because keying on hash+model would silently re-parse and re-charge the entire history the first time the user changed models (D-14/Pitfall 7).
 - [Phase 03]: Parse cache (03-06): putCached takes the raw base URL and stores only new URL().host, so a gateway URL carrying the key in userinfo or a query string cannot reach SQLite; money is bound as-is with no rounding fallback (a silent auto-correct is what D-12 forbids), and a corrupt JSON blob degrades to {}/[] rather than aborting a batch.
 - [Quick 260727-fb9]: payload-free IPC handlers normalize before the strict-empty parse (`parse(raw ?? {})`) — the gate stays a real path-injection guard because a non-empty payload still throws before any privileged work, while the genuine no-arg preload call is accepted. ingestion:scan was the last mis-shaped site; the six surviving bare `Schema.parse(raw)` calls all belong to handlers whose preload method sends an argument.
+- [Quick 260727-iv0]: the renderer mirrors confidence.ts's flag-attribution rules LOCALLY rather than importing from src/main (which would pull main-process code into the renderer bundle), and any flag it cannot attribute to a known ParsedFields key condemns all three money fields. ARITHMETIC_FLAG is literally 'arithmetic:subtotal+tax!=total' whose suffix is not a field name, so a naive split(':') mapping would drop the whole cross-check silently; the backstop makes every future unrecognized flag degrade toward showing MORE review markers, and since totalCents always renders it guarantees a non-empty flag set is always visible (WR-10).
+- [Quick 260727-iv0]: the Bills row shows exactly ONE status chip whose label and variant both come from statusChip's ten-row precedence table. File status (rows 1-5) outranks parse status so a dedupe warning can never be overwritten by "Ready to review", and "Needs review" outranks "Already read" because a flagged bill wearing a calm cache-hit chip is the chip-level WR-10 failure. Only 'flagged' confidence is surfaced, never 'low' (the image-only route lands every non-flagged field at 'low' by design, so marking low would badge every phone-photo receipt).
 - [Quick 260727-fb9]: a bridge-shape assertion is not a proof of function — e2e/ipc-boundary.spec.ts asserted `scan` existed on window.api, which a permanently-rejecting handler passed for a whole phase. Security gates whose reject half is unreachable from the renderer (the preload discards arguments) are pinned at the main-process handler instead, with the resolve half proven by an e2e that actually invokes the channel.
 
 ### Pending Todos
@@ -141,6 +143,7 @@ None yet.
 | ID | Date | Task | Outcome |
 |----|------|------|---------|
 | 260727-fb9 | 2026-07-27 | Fix ingestion:scan strict-empty payload rejection + regression coverage | `parse(raw ?? {})` in src/main/ipc/ingestion.ts; new test/ingestion-ipc-scan.test.ts (5 cases) and e2e/ingestion-scan.spec.ts (invocation + UI proof). ING-01/ING-02 now genuinely functional. Commits 8aaddb0, fdf9eaf, 6c26cc0. |
+| 260727-iv0 | 2026-07-27 | Bills row: labeled parse fields + a single status chip | ScanRow now renders all nine parsed fields as labeled `<dl>` pairs with the review marker on the field that failed, plus exactly one Badge from `statusChip`'s ten-row precedence table (the In batch / file-status / parse-status / blanket Needs review stack is gone). New `flaggedFields` helper; `truncated` surfaced. WR-10 strengthened, not weakened. New test/bills-row-status.test.ts (38 pins). Suite 358 -> 419. Commits 2158af3, 823df94, 72904c8, 927ac48. |
 
 ## Deferred Items
 
@@ -152,6 +155,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-27T15:40:42.386Z
-Stopped at: Completed 03-07-PLAN.md (Phase 03 code complete, 7/7 plans)
+Last session: 2026-07-27T17:59:30.000Z
+Stopped at: Completed quick task 260727-iv0 (Bills row labeled fields + single status chip)
 Resume file: None
