@@ -37,11 +37,45 @@ vi.mock('electron', () => ({
     }
   },
   // The broadcast helpers import BrowserWindow at module load; never exercised here.
-  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null }
+  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
+  // qbo.ts injects shell.openExternal into the OAuth flow. Never invoked here, because the service
+  // layer below is mocked, but the export has to exist or the mock throws on the reference.
+  shell: { openExternal: async (): Promise<void> => {} },
+  app: { getPath: (): string => '', isPackaged: false }
 }))
 
 vi.mock('../src/main/ipc/trusted-sender', () => ({
   assertTrustedSender: (): void => {}
+}))
+
+/**
+ * QBO-CONNECT landed the real qbo bodies, so those five channels no longer reject with the stub
+ * copy. The SERVICE layer is mocked here (not the network, not the database) so this file keeps
+ * testing exactly what it was written to test: that the sender gate and the payload gate still run
+ * first, in that order, on every finish-sprint channel. The QuickBooks behaviour itself is covered
+ * by test/qbo-*.test.ts.
+ */
+const QBO_STATUS = { state: 'disconnected', companyName: null, realmId: null, lastSyncAt: null }
+
+vi.mock('../src/main/qbo/service', () => ({
+  readStatus: () => QBO_STATUS,
+  connect: async () => QBO_STATUS,
+  disconnect: () => QBO_STATUS,
+  syncReference: async () => ({
+    vendors: 0,
+    expenseAccounts: 0,
+    paymentAccounts: 0,
+    items: 0,
+    syncedAt: '2026-07-27T00:00:00.000Z'
+  }),
+  getReference: () => ({
+    vendors: [],
+    expenseAccounts: [],
+    paymentAccounts: [],
+    items: [],
+    syncedAt: null
+  }),
+  markConnectionExpired: (): void => {}
 }))
 
 import { registerQboIpc } from '../src/main/ipc/qbo'
@@ -138,11 +172,6 @@ describe('every finish-sprint channel is registered', () => {
 
 describe('payload-free channels gate correctly', () => {
   const payloadFree = [
-    Channels.qboStatus,
-    Channels.qboConnect,
-    Channels.qboDisconnect,
-    Channels.qboSyncReference,
-    Channels.qboGetReference,
     Channels.postingBatches,
     Channels.postingUndoLast,
     Channels.ingestionPickFiles,
@@ -170,6 +199,33 @@ describe('payload-free channels gate correctly', () => {
     const err = await rejection(channel, { realmId: '9341457604445280', force: true })
     expect(err).toBeTruthy()
     expect((err as Error).message).not.toBe(NOT_IMPLEMENTED_COPY)
+  })
+})
+
+// The qbo group is implemented, so the same two halves are asserted against a RESOLVED value rather
+// than against the stub copy. The zero-arity half is still the ingestion:scan regression in
+// miniature: a handler that parsed a bare `raw` would reject every real call from the preload.
+describe('implemented qbo channels keep both halves of the payload gate', () => {
+  const qboChannels = [
+    Channels.qboStatus,
+    Channels.qboConnect,
+    Channels.qboDisconnect,
+    Channels.qboSyncReference,
+    Channels.qboGetReference
+  ]
+
+  it.each(qboChannels)('%s resolves for the zero-arity preload call (raw === undefined)', async (channel) => {
+    await expect(handlerFor(channel)(FAKE_EVENT, undefined)).resolves.toBeTruthy()
+  })
+
+  it.each(qboChannels)('%s resolves for an explicit empty object', async (channel) => {
+    await expect(handlerFor(channel)(FAKE_EVENT, {})).resolves.toBeTruthy()
+  })
+
+  it.each(qboChannels)('%s rejects a smuggled non-empty payload at the gate', async (channel) => {
+    // A smuggled realmId would be an attempt to point the app at a different company.
+    const err = await rejection(channel, { realmId: '9341457604445280', force: true })
+    expect(err).toBeTruthy()
   })
 })
 
@@ -303,12 +359,9 @@ describe('posting:batch-detail and posting:summary payload gates', () => {
 // ---------------------------------------------------------------------------
 
 describe('stubs reject with mapped copy, never a code or raw error text', () => {
+  // The qbo entries are gone from this list because QBO-CONNECT replaced those bodies. Each
+  // remaining group drops its own rows here as it lands.
   const everyStub: Array<[string, unknown]> = [
-    [Channels.qboStatus, undefined],
-    [Channels.qboConnect, undefined],
-    [Channels.qboDisconnect, undefined],
-    [Channels.qboSyncReference, undefined],
-    [Channels.qboGetReference, undefined],
     [Channels.reconMatch, { fileHashes: [HASH_A] }],
     [Channels.postingSend, { rows: [VALID_ROW] }],
     [Channels.postingBatches, undefined],
