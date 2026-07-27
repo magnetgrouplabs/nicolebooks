@@ -37,7 +37,14 @@ import {
   routePdf
 } from '../src/main/parse/route'
 import type { PageSignals } from '../src/main/parse/route'
-import { extractPdfText, renderPdfPageImage } from '../src/main/parse/extract-pdf'
+import {
+  RENDER_LONG_EDGE,
+  RENDER_MAX_PIXELS,
+  RENDER_MAX_SCALE,
+  computeRenderScale,
+  extractPdfText,
+  renderPdfPageImage
+} from '../src/main/parse/extract-pdf'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -209,3 +216,110 @@ describe('real image-only PDF fixture (D-19 / D-20 end-to-end)', () => {
     await expect(renderPdfPageImage(bytes, 5)).rejects.toThrow()
   }, 30_000)
 })
+
+// ---------------------------------------------------------------------------
+// CR-02: the render bound is on OUTPUT PIXELS, not on the multiplier
+// ---------------------------------------------------------------------------
+//
+// The scale used to be clamped to a MINIMUM of 1, so any page whose long edge exceeded
+// RENDER_LONG_EDGE was rendered at full size. PDF allows a 14400x14400 MediaBox, and
+// createCanvas(14400, 14400) measures ~875 MB RSS before unpdf's PNG data-URL round trip and
+// encodeJpeg's second canvas. An OOM abort is NOT catchable by the pipeline's per-file try/catch,
+// so one hostile (or merely large-format) PDF took the whole batch down with the app.
+
+describe('computeRenderScale — the output-pixel ceiling (CR-02)', () => {
+  it('down-scales an enormous MediaBox instead of rendering it 1:1', () => {
+    const scale = computeRenderScale(14_400, 14_400)
+    expect(scale).toBeLessThan(1) // the pre-fix floor of 1 is exactly the defect
+    expect(14_400 * scale * (14_400 * scale)).toBeLessThanOrEqual(RENDER_MAX_PIXELS)
+  })
+
+  it('keeps every page under the pixel ceiling, whatever its geometry', () => {
+    const geometries: Array<[number, number]> = [
+      [14_400, 14_400],
+      [14_400, 100],
+      [5000, 5000],
+      [3000, 4000],
+      [612, 792], // US Letter
+      [595, 842], // A4
+      [200, 200]
+    ]
+    for (const [w, h] of geometries) {
+      const scale = computeRenderScale(w, h)
+      expect(w * scale * (h * scale)).toBeLessThanOrEqual(RENDER_MAX_PIXELS + 1)
+      expect(scale).toBeGreaterThan(0)
+      expect(scale).toBeLessThanOrEqual(RENDER_MAX_SCALE)
+    }
+  })
+
+  it('still up-scales a small page toward the target long edge (capped at 4x)', () => {
+    // A US Letter page: 792 * 2.525 ~= 2000, the legible-small-print target.
+    expect(computeRenderScale(612, 792)).toBeCloseTo(RENDER_LONG_EDGE / 792, 6)
+    // A tiny receipt-sized MediaBox is capped rather than blown up 20x.
+    expect(computeRenderScale(100, 100)).toBe(RENDER_MAX_SCALE)
+  })
+
+  it('degrades to 1 on a nonsense viewport instead of NaN or Infinity', () => {
+    for (const [w, h] of [
+      [0, 0],
+      [Number.NaN, 100],
+      [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+      [-10, -10]
+    ] as Array<[number, number]>) {
+      const scale = computeRenderScale(w, h)
+      expect(Number.isFinite(scale)).toBe(true)
+      expect(scale).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('renderPdfPageImage — a large-MediaBox page cannot allocate an unbounded raster', () => {
+  it('renders a synthetic 14400x14400 page at or under RENDER_MAX_PIXELS', async () => {
+    const jpeg = await renderPdfPageImage(syntheticPdf(14_400, 14_400), 0)
+    const { width, height } = await jpegSize(jpeg)
+    expect(width * height).toBeLessThanOrEqual(RENDER_MAX_PIXELS)
+    expect(Math.max(width, height)).toBeLessThanOrEqual(RENDER_LONG_EDGE)
+  }, 60_000)
+
+  it('renders a merely oversized page (5000x5000) under the ceiling too', async () => {
+    // Pre-fix this rendered 5000x5000 = 25 megapixels, 25x over the bound.
+    const jpeg = await renderPdfPageImage(syntheticPdf(5000, 5000), 0)
+    const { width, height } = await jpegSize(jpeg)
+    expect(width * height).toBeLessThanOrEqual(RENDER_MAX_PIXELS)
+  }, 60_000)
+})
+
+/** Decode a rendered JPEG far enough to read its dimensions. */
+async function jpegSize(jpeg: Buffer): Promise<{ width: number; height: number }> {
+  const { loadImage } = await import('@napi-rs/canvas')
+  const image = await loadImage(jpeg)
+  return { width: image.width, height: image.height }
+}
+
+/**
+ * A minimal, valid one-page PDF with the given MediaBox, built with real xref offsets so pdfjs
+ * loads it without falling back to recovery. Everything is ASCII, so byte offsets equal string
+ * lengths.
+ */
+function syntheticPdf(width: number, height: number): Buffer {
+  const content = `0.2 0.4 0.9 rg 0 0 ${width} ${height} re f`
+  const bodies = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`
+  ]
+
+  let pdf = '%PDF-1.4\n'
+  const offsets: number[] = []
+  bodies.forEach((body, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`
+  })
+
+  const xrefAt = pdf.length
+  pdf += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n`
+  for (const offset of offsets) pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`
+  pdf += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`
+  return Buffer.from(pdf, 'latin1')
+}

@@ -45,10 +45,19 @@ const CANVAS_IMPORT = (): Promise<typeof import('@napi-rs/canvas')> => import('@
 
 /** Target long edge for a rendered page: legible small print, bounded tokens (Pitfall 6). */
 export const RENDER_LONG_EDGE = 2000
-/** Never render below 1:1 (that would lose detail the page already has)... */
-export const RENDER_MIN_SCALE = 1
-/** ...and never above 4x, so a hostile page cannot force a gigantic raster (T-03-02/T-03-03). */
+/** Never up-scale beyond 4x: a tiny MediaBox must not be blown up into a huge raster. */
 export const RENDER_MAX_SCALE = 4
+/**
+ * The absolute ceiling on OUTPUT pixels, whatever the page geometry claims (T-03-02/T-03-03).
+ *
+ * Bounding the multiplier alone is not a bound: the raster is pageSize * scale, so a floor of 1
+ * on the scale guaranteed that an oversized page rendered at FULL size. PDF permits a MediaBox up
+ * to 14400x14400 units, and `createCanvas(14400, 14400)` measures at ~875 MB RSS on this machine
+ * before unpdf's PNG data-URL round trip and encodeJpeg's second canvas — several gigabytes for
+ * one page. An OOM abort is not catchable by the pipeline's per-file try/catch, so it would take
+ * the whole app (and the rest of the batch) down with it, defeating D-15.
+ */
+export const RENDER_MAX_PIXELS = 4_000_000 // ~2000x2000
 /** JPEG quality for the rendered page; matches prep-image.ts so both routes look the same. */
 export const RENDER_JPEG_QUALITY = 80
 
@@ -132,9 +141,10 @@ export async function loadPdfSignals(bytes: Buffer): Promise<PageSignals[]> {
  * `pageIndex` is ZERO-based (the caller iterates pages, not PDF page numbers); unpdf takes
  * one-based page numbers, so the conversion happens here and nowhere else.
  *
- * The render scale is derived from the page's own geometry so an A4 invoice and a wide receipt
- * both land near RENDER_LONG_EDGE, clamped so neither a tiny nor an enormous MediaBox can drive
- * the raster out of bounds. unpdf's renderer emits PNG (canvas.toDataURL defaults to it), so the
+ * The render scale is derived from the page's own geometry by computeRenderScale, so an A4 invoice
+ * and a wide receipt both land near RENDER_LONG_EDGE while an enormous MediaBox is DOWN-scaled
+ * under the RENDER_MAX_PIXELS ceiling rather than rendered at full size. unpdf's renderer emits
+ * PNG (canvas.toDataURL defaults to it), so the
  * bitmap is re-encoded to JPEG by @napi-rs/canvas — deliberately NOT by sharp, which keeps the
  * entire PDF path sharp-free and the D-07 boundary unambiguous.
  */
@@ -152,18 +162,39 @@ export async function renderPdfPageImage(bytes: Buffer, pageIndex: number): Prom
 
     const page = await doc.getPage(pageNumber)
     const viewport = page.getViewport({ scale: 1 })
-    const longEdge = Math.max(viewport.width, viewport.height)
-    const scale = clamp(
-      longEdge > 0 ? RENDER_LONG_EDGE / longEdge : RENDER_MIN_SCALE,
-      RENDER_MIN_SCALE,
-      RENDER_MAX_SCALE
-    )
+    const scale = computeRenderScale(viewport.width, viewport.height)
 
     const png = await renderPageAsImage(doc, pageNumber, { canvasImport: CANVAS_IMPORT, scale })
     return await encodeJpeg(Buffer.from(png))
   } finally {
     await closeDocument(doc)
   }
+}
+
+/**
+ * The render scale for a page of `width` x `height` PDF units.
+ *
+ * Two bounds, and the second one is the load-bearing one:
+ *   1. aim the long edge at RENDER_LONG_EDGE, never up-scaling past RENDER_MAX_SCALE;
+ *   2. cap the OUTPUT PIXEL COUNT at RENDER_MAX_PIXELS, which requires allowing a scale BELOW 1
+ *      for an oversized page. A floor of 1 (the pre-fix behaviour) meant a 14400x14400 MediaBox
+ *      rendered at full size, so the "never above 4x" comment bounded the multiplier while the
+ *      raster stayed unbounded.
+ *
+ * Exported so the bound is unit-testable without rasterizing anything.
+ */
+export function computeRenderScale(width: number, height: number): number {
+  const w = Number.isFinite(width) && width > 0 ? width : 0
+  const h = Number.isFinite(height) && height > 0 ? height : 0
+  const longEdge = Math.max(w, h)
+  if (longEdge <= 0) return 1
+
+  // Down-scaling is explicitly allowed here: that is the whole fix.
+  let scale = Math.min(RENDER_LONG_EDGE / longEdge, RENDER_MAX_SCALE)
+  const pixels = w * h * scale * scale
+  if (pixels > RENDER_MAX_PIXELS) scale *= Math.sqrt(RENDER_MAX_PIXELS / pixels)
+
+  return Number.isFinite(scale) && scale > 0 ? scale : 1
 }
 
 // ---------------------------------------------------------------------------
@@ -303,11 +334,6 @@ function determinant(m: Matrix): number {
 function countNonWhitespace(text: string | undefined): number {
   if (typeof text !== 'string') return 0
   return text.replace(/\s/g, '').length
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min
-  return Math.min(Math.max(value, min), max)
 }
 
 /**
