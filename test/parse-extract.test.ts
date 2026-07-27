@@ -507,6 +507,74 @@ describe('extractFields — structured-output fallback ladder (D-25)', () => {
     expect(result.ok).toBe(true)
   })
 
+  // WR-05. temperature: 0 went on every rung of every call. OpenAI's o-series rejects an explicit
+  // temperature with a 400, and vision-families.ts badges o1/o3-mini/o4-mini as CONFIRMED
+  // vision-capable, so choosing one made every file fail with "The AI service could not be
+  // reached for this file. Click Retry" — an infinite retry loop against a configuration problem
+  // a non-technical user cannot diagnose.
+  it('retries the same rung without temperature when the model rejects the parameter', async () => {
+    const client = makeFakeClient({
+      chatImpl: (args) => {
+        if (args.temperature !== undefined) {
+          throw Object.assign(
+            new Error("Unsupported value: 'temperature' does not support 0 with this model"),
+            { status: 400 }
+          )
+        }
+        return makeChatResponse(MINIMAL_BILL)
+      }
+    })
+
+    const result = await extractFields({ model: 'o3-mini', imageDataUrls: [page(1)], client })
+
+    expect(result.ok).toBe(true)
+    expect(client.chatCalls()).toHaveLength(2)
+    // The retry stays on the STRONGEST rung: the parameter was the problem, not the rung.
+    expect(client.chatCalls()[1]?.method).toBe('chat.completions.parse')
+    expect(client.chatCalls()[0]?.args?.temperature).toBe(0)
+    expect(client.chatCalls()[1]?.args?.temperature).toBeUndefined()
+  })
+
+  it('keeps temperature dropped for the rest of the document, including the repair re-ask', async () => {
+    let replies = 0
+    const client = makeFakeClient({
+      chatImpl: (args) => {
+        if (args.temperature !== undefined) {
+          throw Object.assign(new Error("'temperature' is not supported with this model"), {
+            status: 400
+          })
+        }
+        replies += 1
+        // First accepted reply fails the local schema, forcing the one repair re-ask.
+        return makeChatResponse(replies === 1 ? { ...MINIMAL_BILL, total: 1234.1 } : MINIMAL_BILL)
+      }
+    })
+
+    const result = await extractFields({ model: 'o4-mini', imageDataUrls: [page(1)], client })
+
+    expect(result.ok).toBe(true)
+    // One rejected call, then every later call omits the parameter rather than re-learning it.
+    expect(client.chatCalls()).toHaveLength(3)
+    for (const call of client.chatCalls().slice(1)) {
+      expect(call.args?.temperature).toBeUndefined()
+    }
+  })
+
+  it('still sends temperature 0 to a model that accepts it (D-22 determinism)', async () => {
+    const client = makeFakeClient({ parsedObject: MINIMAL_BILL })
+    await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+    expect(client.chatCalls()).toHaveLength(1)
+    expect(client.chatCalls()[0]?.args?.temperature).toBe(0)
+  })
+
+  it('does not treat a 5xx that merely mentions temperature as a parameter rejection', async () => {
+    const client = makeFakeClient({
+      chatError: Object.assign(new Error('upstream temperature sensor fault'), { status: 503 })
+    })
+    await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })
+    expect(client.chatCalls()).toHaveLength(1)
+  })
+
   it('returns a failure marker when every rung is unsupported', async () => {
     const client = makeFakeClient({ chatError: unsupported('everything') })
     const result = await extractFields({ model: MODEL, imageDataUrls: [page(1)], client })

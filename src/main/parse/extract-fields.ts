@@ -235,10 +235,33 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
 
   const rungs = ladderFrom(deps.startRung)
   let lastError = 'no rung was attempted'
+  // Sticky for this document once the endpoint has told us it will not take the parameter: the
+  // ladder must not re-learn it on every rung and every repair re-ask (see rejectsTemperature).
+  let omitTemperature = false
 
   for (let i = 0; i < rungs.length; i += 1) {
     const rung = rungs[i]
-    const first = await callRung(client, rung, { model, referenceText, imageDataUrls })
+    let first = await callRung(client, rung, {
+      model,
+      referenceText,
+      imageDataUrls,
+      omitTemperature
+    })
+
+    // The reasoning-model dead end (WR-05). OpenAI's o-series rejects an explicit temperature
+    // with a 400, and vision-families.ts badges o1/o3/o4 as confirmed vision-capable, so picking
+    // one made EVERY file fail with "The AI service could not be reached", sending a
+    // non-technical user into an infinite retry loop against a configuration problem. Retrying
+    // the SAME rung without the parameter costs one call and rescues the whole batch.
+    if (!first.ok && !omitTemperature && rejectsTemperature(first.error)) {
+      omitTemperature = true
+      first = await callRung(client, rung, {
+        model,
+        referenceText,
+        imageDataUrls,
+        omitTemperature: true
+      })
+    }
 
     if (!first.ok) {
       lastError = describeError(first.error)
@@ -273,7 +296,8 @@ export async function extractFields(deps: ExtractFieldsDeps): Promise<ExtractFie
       model,
       referenceText,
       imageDataUrls,
-      repairError: firstCheck.detail
+      repairError: firstCheck.detail,
+      omitTemperature
     })
     if (!repair.ok) {
       return {
@@ -335,6 +359,8 @@ interface RungInput {
   referenceText: string | null
   imageDataUrls: string[]
   repairError?: string
+  /** Send no `temperature` at all: the endpoint rejected the parameter (WR-05). */
+  omitTemperature?: boolean
 }
 
 type RungOutcome = { ok: true; response: ChatResponse } | { ok: false; error: unknown }
@@ -377,7 +403,11 @@ function buildRequest(
     model: input.model,
     // Extraction is transcription, not composition. Determinism also makes D-22's second-pass
     // agreement check meaningful — two sampled calls would disagree by construction.
-    temperature: 0,
+    //
+    // Omitted only when the endpoint has rejected the parameter outright (a reasoning model).
+    // Those models are deterministic-ish at their fixed default anyway, and a slightly weaker
+    // agreement signal beats every file failing.
+    ...(input.omitTemperature ? {} : { temperature: 0 }),
     messages: [
       { role: 'system', content: BILL_SYSTEM_PROMPT },
       {
@@ -511,6 +541,23 @@ function canFallBack(error: unknown): boolean {
   // No status at all: a TypeError from a client with no `parse` method (a bare gateway wrapper)
   // still has to descend, which is the case the ladder was written for.
   return true
+}
+
+/**
+ * Did the endpoint reject the request because of the `temperature` parameter itself?
+ *
+ * OpenAI's o-series and newer reasoning models answer an explicit temperature with a 400 whose
+ * message names the parameter ("Unsupported value: 'temperature' does not support 0 with this
+ * model"). Matching on the parameter NAME rather than on a model-id list is what keeps this
+ * working for the next family that does the same thing.
+ *
+ * A 5xx is excluded: a server fault whose body happens to mention the word is not a parameter
+ * rejection, and retrying it would double the failed calls for every file.
+ */
+function rejectsTemperature(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status
+  if (typeof status === 'number' && status >= 500) return false
+  return /temperature/i.test(describeError(error))
 }
 
 /**
