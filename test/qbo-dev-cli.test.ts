@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import {
   exportTokensToFile,
   findCredentialsDir,
+  parseAiCredentials,
   parseClientCredentials,
   parseDevQboCommand,
   redact
@@ -38,6 +39,7 @@ afterEach(() => {
 describe('parseDevQboCommand', () => {
   it('recognizes each flag', () => {
     expect(parseDevQboCommand(['electron', '.', '--dev-seed-qbo'])).toBe('seed')
+    expect(parseDevQboCommand(['--dev-seed-ai'])).toBe('seed-ai')
     expect(parseDevQboCommand(['--dev-qbo-probe'])).toBe('probe')
     expect(parseDevQboCommand(['--dev-qbo-export'])).toBe('export')
     expect(parseDevQboCommand(['--dev-qbo-status'])).toBe('status')
@@ -74,6 +76,42 @@ describe('parseClientCredentials', () => {
   it('returns null when either half is missing, rather than seeding half a credential', () => {
     expect(parseClientCredentials('- Client ID (Development): abc')).toBeNull()
     expect(parseClientCredentials('nothing useful here')).toBeNull()
+  })
+})
+
+describe('parseAiCredentials', () => {
+  // The note is a human-maintained form whose labels carry parenthetical examples, and those
+  // examples contain colons. A pattern that stopped at the first colon on the line would capture
+  // the example rather than the answer, which is the whole reason this has a spec.
+  const NOTE = [
+    '## 2. AI (OpenAI-compatible, used for live parse testing)',
+    '',
+    '- Base URL (e.g. https://api.openai.com/v1 or https://openrouter.ai/api/v1): https://api.openai.com/v1',
+    '- API key: sk-proj-abcdefghijklmnop',
+    '- Vision-capable model to default to (e.g. gpt-4o): gpt-4o mini'
+  ].join('\n')
+
+  it('reads past the example URLs in the label to the value the human typed', () => {
+    expect(parseAiCredentials(NOTE)?.baseUrl).toBe('https://api.openai.com/v1')
+  })
+
+  it('reads the key verbatim', () => {
+    expect(parseAiCredentials(NOTE)?.apiKey).toBe('sk-proj-abcdefghijklmnop')
+  })
+
+  // A person writes "gpt-4o mini"; the API wants "gpt-4o-mini". Case is left alone on purpose,
+  // because provider-qualified ids are case sensitive on some endpoints.
+  it('collapses the spaces a human leaves in a model name into the id the API expects', () => {
+    expect(parseAiCredentials(NOTE)?.model).toBe('gpt-4o-mini')
+    expect(parseAiCredentials(NOTE.replace('gpt-4o mini', 'gpt-4o'))?.model).toBe('gpt-4o')
+    expect(
+      parseAiCredentials(NOTE.replace('gpt-4o mini', 'openai/gpt-4o-mini'))?.model
+    ).toBe('openai/gpt-4o-mini')
+  })
+
+  it('returns null when any of the three is missing, rather than seeding a half configuration', () => {
+    expect(parseAiCredentials(NOTE.replace('- API key: sk-proj-abcdefghijklmnop', ''))).toBeNull()
+    expect(parseAiCredentials('nothing useful here')).toBeNull()
   })
 })
 
