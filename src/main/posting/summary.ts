@@ -52,6 +52,10 @@ export function batchDetailResult(
   return {
     entries: listEntries(db, batchId).map((entry) => ({
       fileHash: entry.fileHash,
+      // Denormalized at post time, exactly like the report's names: the History screen must be able
+      // to say WHICH document an entry came from months later, without a join that can come back
+      // empty once the ingestion ledger has moved on.
+      filename: entry.filename,
       entryType: entry.entryType,
       qboId: entry.qboId,
       syncToken: entry.syncToken,

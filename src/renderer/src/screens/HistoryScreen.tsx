@@ -211,14 +211,29 @@ export function BatchRow({
   )
 }
 
+/**
+ * What to call one entry on screen.
+ *
+ * The FILENAME, because that is the only handle a person has on a document: they recognise
+ * "apex-plumbing-supply-invoice-APX-84213.pdf" and they recognise nothing at all in
+ * "2df39da7907f...". The live drill screenshotted a whole batch listed as truncated hashes.
+ *
+ * The hash remains the fallback rather than an empty cell, because a row with no label at all is
+ * worse than a row with a useless one: at least the hash can be matched against the audit log.
+ */
+export function entryLabel(entry: PostingBatchEntry): string {
+  if (entry.filename !== null && entry.filename.trim() !== '') return entry.filename
+  return `${entry.fileHash.slice(0, 12)}...`
+}
+
 /** One entry inside the selected batch. */
 export function EntryRow({ entry }: { entry: PostingBatchEntry }): React.JSX.Element {
   const chip = entryChip(entry)
   return (
     <li className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-mono text-sm text-card-foreground">
-          {entry.fileHash.slice(0, 12)}...
+        <span className="truncate font-mono text-sm text-card-foreground">
+          {entryLabel(entry)}
         </span>
         <span className="font-sans text-sm text-muted-foreground">
           {entry.entryType === 'bill' ? 'Bill' : 'Expense'}

@@ -518,6 +518,14 @@ export interface PostingBatchesResult {
  */
 export interface PostingBatchEntry {
   fileHash: string
+  /**
+   * The document this entry came from, recorded at post time.
+   *
+   * Carried because the History screen has to name the thing it is talking about, and a truncated
+   * SHA-256 names nothing to the person reading it. null only when the file was never in the
+   * ingestion ledger, in which case the screen falls back to the hash rather than to an empty row.
+   */
+  filename: string | null
   entryType: PostingEntryType
   qboId: string | null
   syncToken: string | null
